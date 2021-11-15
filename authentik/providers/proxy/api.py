@@ -1,7 +1,7 @@
 """ProxyProvider API Views"""
-from typing import Any
+from typing import Any, Optional
 
-from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
+from drf_spectacular.utils import extend_schema_field
 from rest_framework.exceptions import ValidationError
 from rest_framework.fields import CharField, ListField, SerializerMethodField
 from rest_framework.serializers import ModelSerializer
@@ -10,6 +10,8 @@ from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from authentik.core.api.providers import ProviderSerializer
 from authentik.core.api.used_by import UsedByMixin
 from authentik.core.api.utils import PassiveSerializer
+from authentik.lib.utils.time import timedelta_from_string
+from authentik.providers.oauth2.models import ScopeMapping
 from authentik.providers.oauth2.views.provider import ProviderInfoView
 from authentik.providers.proxy.models import ProxyMode, ProxyProvider
 
@@ -35,6 +37,7 @@ class ProxyProviderSerializer(ProviderSerializer):
     """ProxyProvider Serializer"""
 
     redirect_uris = CharField(read_only=True)
+    outpost_set = ListField(child=CharField(), read_only=True, source="outpost_set.all")
 
     def validate(self, attrs) -> dict[Any, str]:
         """Check that internal_host is set when mode is Proxy"""
@@ -42,9 +45,7 @@ class ProxyProviderSerializer(ProviderSerializer):
             attrs.get("mode", ProxyMode.PROXY) == ProxyMode.PROXY
             and attrs.get("internal_host", "") == ""
         ):
-            raise ValidationError(
-                "Internal host cannot be empty when forward auth is disabled."
-            )
+            raise ValidationError("Internal host cannot be empty when forward auth is disabled.")
         return attrs
 
     def create(self, validated_data):
@@ -74,6 +75,8 @@ class ProxyProviderSerializer(ProviderSerializer):
             "mode",
             "redirect_uris",
             "cookie_domain",
+            "token_validity",
+            "outpost_set",
         ]
 
 
@@ -82,20 +85,50 @@ class ProxyProviderViewSet(UsedByMixin, ModelViewSet):
 
     queryset = ProxyProvider.objects.all()
     serializer_class = ProxyProviderSerializer
+    filterset_fields = {
+        "application": ["isnull"],
+        "name": ["iexact"],
+        "authorization_flow__slug": ["iexact"],
+        "property_mappings": ["iexact"],
+        "internal_host": ["iexact"],
+        "external_host": ["iexact"],
+        "internal_host_ssl_validation": ["iexact"],
+        "certificate__kp_uuid": ["iexact"],
+        "certificate__name": ["iexact"],
+        "skip_path_regex": ["iexact"],
+        "basic_auth_enabled": ["iexact"],
+        "basic_auth_password_attribute": ["iexact"],
+        "basic_auth_user_attribute": ["iexact"],
+        "mode": ["iexact"],
+        "redirect_uris": ["iexact"],
+        "cookie_domain": ["iexact"],
+    }
     ordering = ["name"]
 
 
-@extend_schema_serializer(deprecate_fields=["forward_auth_mode"])
 class ProxyOutpostConfigSerializer(ModelSerializer):
     """Proxy provider serializer for outposts"""
 
     oidc_configuration = SerializerMethodField()
-    forward_auth_mode = SerializerMethodField()
+    token_validity = SerializerMethodField()
+    scopes_to_request = SerializerMethodField()
 
-    def get_forward_auth_mode(self, instance: ProxyProvider) -> bool:
-        """Legacy field for 2021.5 outposts"""
-        # TODO: remove in 2021.7
-        return instance.mode in [ProxyMode.FORWARD_SINGLE, ProxyMode.FORWARD_DOMAIN]
+    @extend_schema_field(OpenIDConnectConfigurationSerializer)
+    def get_oidc_configuration(self, obj: ProxyProvider):
+        """Embed OpenID Connect provider information"""
+        return ProviderInfoView(request=self.context["request"]._request).get_info(obj)
+
+    def get_token_validity(self, obj: ProxyProvider) -> Optional[float]:
+        """Get token validity as second count"""
+        return timedelta_from_string(obj.token_validity).total_seconds()
+
+    def get_scopes_to_request(self, obj: ProxyProvider) -> list[str]:
+        """Get all the scope names the outpost should request,
+        including custom-defined ones"""
+        scope_names = set(
+            ScopeMapping.objects.filter(provider__in=[obj]).values_list("scope_name", flat=True)
+        )
+        return list(scope_names)
 
     class Meta:
 
@@ -117,14 +150,9 @@ class ProxyOutpostConfigSerializer(ModelSerializer):
             "basic_auth_user_attribute",
             "mode",
             "cookie_domain",
-            # Legacy field, remove in 2021.7
-            "forward_auth_mode",
+            "token_validity",
+            "scopes_to_request",
         ]
-
-    @extend_schema_field(OpenIDConnectConfigurationSerializer)
-    def get_oidc_configuration(self, obj: ProxyProvider):
-        """Embed OpenID Connect provider information"""
-        return ProviderInfoView(request=self.context["request"]._request).get_info(obj)
 
 
 class ProxyOutpostConfigViewSet(ReadOnlyModelViewSet):

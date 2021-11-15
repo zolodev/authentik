@@ -15,7 +15,7 @@ from authentik.core.channels import AuthJsonConsumer
 from authentik.outposts.models import OUTPOST_HELLO_INTERVAL, Outpost, OutpostState
 
 GAUGE_OUTPOSTS_CONNECTED = Gauge(
-    "authentik_outposts_connected", "Currently connected outposts", ["outpost", "uid"]
+    "authentik_outposts_connected", "Currently connected outposts", ["outpost", "uid", "expected"]
 )
 GAUGE_OUTPOSTS_LAST_UPDATE = Gauge(
     "authentik_outposts_last_update",
@@ -59,9 +59,7 @@ class OutpostConsumer(AuthJsonConsumer):
     def connect(self):
         super().connect()
         uuid = self.scope["url_route"]["kwargs"]["pk"]
-        outpost = get_objects_for_user(
-            self.user, "authentik_outposts.view_outpost"
-        ).filter(pk=uuid)
+        outpost = get_objects_for_user(self.user, "authentik_outposts.view_outpost").filter(pk=uuid)
         if not outpost.exists():
             raise DenyConnection()
         self.accept()
@@ -78,6 +76,7 @@ class OutpostConsumer(AuthJsonConsumer):
             GAUGE_OUTPOSTS_CONNECTED.labels(
                 outpost=self.outpost.name,
                 uid=self.last_uid,
+                expected=self.outpost.config.kubernetes_replicas,
             ).dec()
         LOGGER.debug(
             "removed outpost instance from cache",
@@ -102,9 +101,10 @@ class OutpostConsumer(AuthJsonConsumer):
             GAUGE_OUTPOSTS_CONNECTED.labels(
                 outpost=self.outpost.name,
                 uid=self.last_uid,
+                expected=self.outpost.config.kubernetes_replicas,
             ).inc()
             LOGGER.debug(
-                "added outpost instace to cache",
+                "added outpost instance to cache",
                 outpost=self.outpost,
                 instance_uuid=self.last_uid,
             )
@@ -129,7 +129,5 @@ class OutpostConsumer(AuthJsonConsumer):
     def event_update(self, event):
         """Event handler which is called by post_save signals, Send update instruction"""
         self.send_json(
-            asdict(
-                WebsocketMessage(instruction=WebsocketMessageInstruction.TRIGGER_UPDATE)
-            )
+            asdict(WebsocketMessage(instruction=WebsocketMessageInstruction.TRIGGER_UPDATE))
         )

@@ -25,6 +25,23 @@ ak_message("Access denied")
 return False
 ```
 
+### `ak_user_has_authenticator(user: User, device_type: Optional[str] = None)` (2021.9+)
+
+Check if a user has any authenticator devices. Only fully validated devices are counted.
+
+Optionally, you can filter a specific device type. The following options are valid:
+
+- `totp`
+- `duo`
+- `static`
+- `webauthn`
+
+Example:
+
+```python
+return ak_user_has_authenticator(request.user)
+```
+
 import Functions from '../expressions/_functions.md'
 
 <Functions />
@@ -36,7 +53,7 @@ import Objects from '../expressions/_objects.md'
 <Objects />
 
 - `request`: A PolicyRequest object, which has the following properties:
-    - `request.user`: The current user, against which the policy is applied. See [User](../expressions/reference/user-object.md)
+    - `request.user`: The current user, against which the policy is applied. See [User](../user-group/user.md#object-attributes)
     - `request.http_request`: The Django HTTP Request. See ([Django documentation](https://docs.djangoproject.com/en/3.0/ref/request-response/#httprequest-objects))
     - `request.obj`: A Django Model instance. This is only set if the policy is ran against an object.
     - `request.context`: A dictionary with dynamic data. This depends on the origin of the execution.
@@ -50,12 +67,40 @@ import Objects from '../expressions/_objects.md'
     return ak_client_ip.is_private
     ```
 
-    See also [Python documetnation](https://docs.python.org/3/library/ipaddress.html#ipaddress.ip_address)
+    See also [Python documentation](https://docs.python.org/3/library/ipaddress.html#ipaddress.ip_address)
 
 Additionally, when the policy is executed from a flow, every variable from the flow's current context is accessible under the `context` object.
 
 This includes the following:
 
-- `prompt_data`: Data which has been saved from a prompt stage or an external source.
-- `application`: The application the user is in the process of authorizing.
-- `pending_user`: The currently pending user, see [User](/docs/expressions/reference/user-object)
+- `context['prompt_data']`: Data which has been saved from a prompt stage or an external source.
+- `context['application']`: The application the user is in the process of authorizing.
+- `context['pending_user']`: The currently pending user, see [User](../user-group/user.md#object-attributes)
+- `context['auth_method']`: Authentication method set (this value is set by password stages)
+
+    Depending on method, `context['auth_method_args']` is also set.
+
+    Can be any of:
+
+    - `password`: Standard password login
+    - `app_password`: App password (token)
+
+        Sets `context['auth_method_args']` to
+        ```json
+        {
+            "token": {
+                "pk": "f6d639aac81940f38dcfdc6e0fe2a786",
+                "app": "authentik_core",
+                "name": "test (expires=2021-08-23 15:45:54.725880+00:00)",
+                "model_name": "token"
+            }
+        }
+        ```
+    - `ldap`: LDAP bind authentication
+
+        Sets `context['auth_method_args']` to
+        ```json
+        {
+            "source": {} // Information about the source used
+        }
+        ```

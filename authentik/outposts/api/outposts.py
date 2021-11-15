@@ -15,12 +15,8 @@ from authentik.core.api.used_by import UsedByMixin
 from authentik.core.api.utils import PassiveSerializer, is_dict
 from authentik.core.models import Provider
 from authentik.outposts.api.service_connections import ServiceConnectionSerializer
-from authentik.outposts.models import (
-    Outpost,
-    OutpostConfig,
-    OutpostType,
-    default_outpost_config,
-)
+from authentik.outposts.managed import MANAGED_OUTPOST
+from authentik.outposts.models import Outpost, OutpostConfig, OutpostType, default_outpost_config
 from authentik.providers.ldap.models import LDAPProvider
 from authentik.providers.proxy.models import ProxyProvider
 from authentik.providers.radius.models import RadiusProvider
@@ -30,8 +26,10 @@ class OutpostSerializer(ModelSerializer):
     """Outpost Serializer"""
 
     config = JSONField(validators=[is_dict], source="_config")
+    # Need to set allow_empty=True for the embedded outpost with no providers
+    # is checked for other providers in the API Viewset
     providers = PrimaryKeyRelatedField(
-        allow_empty=False,
+        allow_empty=True,
         many=True,
         queryset=Provider.objects.select_subclasses().all(),
     )
@@ -56,6 +54,10 @@ class OutpostSerializer(ModelSerializer):
                         f"{provider.__class__.__name__} providers."
                     )
                 )
+        if self.instance and self.instance.managed == MANAGED_OUTPOST:
+            return providers
+        if len(providers) < 1:
+            raise ValidationError("This list may not be empty.")
         return providers
 
     def validate_config(self, config) -> dict:
@@ -106,6 +108,8 @@ class OutpostViewSet(UsedByMixin, ModelViewSet):
     serializer_class = OutpostSerializer
     filterset_fields = {
         "providers": ["isnull"],
+        "name": ["iexact", "icontains"],
+        "service_connection__name": ["iexact", "icontains"],
     }
     search_fields = [
         "name",

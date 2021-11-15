@@ -1,62 +1,82 @@
 import { t } from "@lingui/macro";
-import { CSSResult, customElement, html, TemplateResult } from "lit-element";
-import PFLogin from "@patternfly/patternfly/components/Login/login.css";
-import PFList from "@patternfly/patternfly/components/List/list.css";
+
+import { CSSResult, TemplateResult, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import AKGlobal from "../../../authentik.css";
+import PFButton from "@patternfly/patternfly/components/Button/button.css";
 import PFForm from "@patternfly/patternfly/components/Form/form.css";
 import PFFormControl from "@patternfly/patternfly/components/FormControl/form-control.css";
+import PFList from "@patternfly/patternfly/components/List/list.css";
+import PFLogin from "@patternfly/patternfly/components/Login/login.css";
 import PFTitle from "@patternfly/patternfly/components/Title/title.css";
-import PFButton from "@patternfly/patternfly/components/Button/button.css";
 import PFBase from "@patternfly/patternfly/patternfly-base.css";
 import PFSpacing from "@patternfly/patternfly/utilities/Spacing/spacing.css";
-import AKGlobal from "../../../authentik.css";
-import { BaseStage } from "../base";
+
+import { ConsentChallenge, ConsentChallengeResponseRequest } from "@goauthentik/api";
+
 import "../../../elements/EmptyState";
 import "../../FormStatic";
-import { ConsentChallenge, ConsentChallengeResponseRequest } from "authentik-api";
-import { ifDefined } from "lit-html/directives/if-defined";
-
+import { BaseStage } from "../base";
 
 @customElement("ak-stage-consent")
 export class ConsentStage extends BaseStage<ConsentChallenge, ConsentChallengeResponseRequest> {
-
     static get styles(): CSSResult[] {
-        return [PFBase, PFLogin, PFList, PFForm, PFSpacing, PFFormControl, PFTitle, PFButton, AKGlobal];
+        return [
+            PFBase,
+            PFLogin,
+            PFList,
+            PFForm,
+            PFSpacing,
+            PFFormControl,
+            PFTitle,
+            PFButton,
+            AKGlobal,
+        ];
     }
 
     render(): TemplateResult {
         if (!this.challenge) {
-            return html`<ak-empty-state
-                ?loading="${true}"
-                header=${t`Loading`}>
-            </ak-empty-state>`;
+            return html`<ak-empty-state ?loading="${true}" header=${t`Loading`}> </ak-empty-state>`;
         }
         return html`<header class="pf-c-login__main-header">
-                <h1 class="pf-c-title pf-m-3xl">
-                    ${this.challenge.flowInfo?.title}
-                </h1>
+                <h1 class="pf-c-title pf-m-3xl">${this.challenge.flowInfo?.title}</h1>
             </header>
             <div class="pf-c-login__main-body">
-                <form class="pf-c-form" @submit=${(e: Event) => { this.submitForm(e); }}>
+                <form
+                    class="pf-c-form"
+                    @submit=${(e: Event) => {
+                        this.submitForm(e);
+                    }}
+                >
                     <ak-form-static
                         class="pf-c-form__group"
                         userAvatar="${this.challenge.pendingUserAvatar}"
-                        user=${this.challenge.pendingUser}>
+                        user=${this.challenge.pendingUser}
+                    >
                         <div slot="link">
-                            <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}">${t`Not you?`}</a>
+                            <a href="${ifDefined(this.challenge.flowInfo?.cancelUrl)}"
+                                >${t`Not you?`}</a
+                            >
                         </div>
                     </ak-form-static>
                     <div class="pf-c-form__group">
-                        <p id="header-text" class="pf-u-mb-xl">
-                            ${this.challenge.headerText}
-                        </p>
-                        ${this.challenge.permissions.length > 0 ? html`
-                            <p class="pf-u-mb-sm">${t`Application requires following permissions:`}</p>
-                            <ul class="pf-c-list" id="permmissions">
-                                ${this.challenge.permissions.map((permission) => {
-                                    return html`<li data-permission-code="${permission.id}">${permission.name}</li>`;
-                                })}
-                            </ul>
-                        ` : html``}
+                        <p id="header-text" class="pf-u-mb-xl">${this.challenge.headerText}</p>
+                        ${this.challenge.permissions.length > 0
+                            ? html`
+                                  <p class="pf-u-mb-sm">
+                                      ${t`Application requires following permissions:`}
+                                  </p>
+                                  <ul class="pf-c-list" id="permmissions">
+                                      ${this.challenge.permissions.map((permission) => {
+                                          return html`<li data-permission-code="${permission.id}">
+                                              ${permission.name}
+                                          </li>`;
+                                      })}
+                                  </ul>
+                              `
+                            : html``}
                     </div>
 
                     <div class="pf-c-form__group pf-m-action">
@@ -67,9 +87,7 @@ export class ConsentStage extends BaseStage<ConsentChallenge, ConsentChallengeRe
                 </form>
             </div>
             <footer class="pf-c-login__main-footer">
-                <ul class="pf-c-login__main-footer-links">
-                </ul>
+                <ul class="pf-c-login__main-footer-links"></ul>
             </footer>`;
     }
-
 }

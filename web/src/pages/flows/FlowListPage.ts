@@ -1,18 +1,23 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../api/Client";
-import { TablePage } from "../../elements/table/TablePage";
 
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import { Flow, FlowsApi } from "@goauthentik/api";
+
+import { AKResponse } from "../../api/Client";
+import { DEFAULT_CONFIG } from "../../api/Config";
+import { uiConfig } from "../../common/config";
 import "../../elements/buttons/SpinnerButton";
-import "../../elements/forms/DeleteForm";
-import "../../elements/forms/ModalForm";
 import "../../elements/forms/ConfirmationForm";
+import "../../elements/forms/DeleteBulkForm";
+import "../../elements/forms/ModalForm";
+import { TableColumn } from "../../elements/table/Table";
+import { TablePage } from "../../elements/table/TablePage";
+import { groupBy } from "../../utils";
 import "./FlowForm";
 import "./FlowImportForm";
-import { TableColumn } from "../../elements/table/Table";
-import { PAGE_SIZE } from "../../constants";
-import { Flow, FlowsApi } from "authentik-api";
-import { DEFAULT_CONFIG } from "../../api/Config";
+import { DesignationToLabel } from "./utils";
 
 @customElement("ak-flow-list")
 export class FlowListPage extends TablePage<Flow> {
@@ -29,15 +34,26 @@ export class FlowListPage extends TablePage<Flow> {
         return "pf-icon pf-icon-process-automation";
     }
 
+    checkbox = true;
+
     @property()
     order = "slug";
 
-    apiEndpoint(page: number): Promise<AKResponse<Flow>> {
+    async apiEndpoint(page: number): Promise<AKResponse<Flow>> {
         return new FlowsApi(DEFAULT_CONFIG).flowsInstancesList({
             ordering: this.order,
             page: page,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             search: this.search || "",
+        });
+    }
+
+    groupBy(items: Flow[]): [string, Flow[]][] {
+        return groupBy(items, (flow) => {
+            if (!flow.designation) {
+                return "";
+            }
+            return DesignationToLabel(flow.designation);
         });
     }
 
@@ -45,11 +61,32 @@ export class FlowListPage extends TablePage<Flow> {
         return [
             new TableColumn(t`Identifier`, "slug"),
             new TableColumn(t`Name`, "name"),
-            new TableColumn(t`Designation`, "designation"),
             new TableColumn(t`Stages`),
             new TableColumn(t`Policies`),
-            new TableColumn(""),
+            new TableColumn(t`Actions`),
         ];
+    }
+
+    renderToolbarSelected(): TemplateResult {
+        const disabled = this.selectedElements.length < 1;
+        return html`<ak-forms-delete-bulk
+            objectLabel=${t`Flow(s)`}
+            .objects=${this.selectedElements}
+            .usedBy=${(item: Flow) => {
+                return new FlowsApi(DEFAULT_CONFIG).flowsInstancesUsedByList({
+                    slug: item.slug,
+                });
+            }}
+            .delete=${(item: Flow) => {
+                return new FlowsApi(DEFAULT_CONFIG).flowsInstancesDestroy({
+                    slug: item.slug,
+                });
+            }}
+        >
+            <button ?disabled=${disabled} slot="trigger" class="pf-c-button pf-m-danger">
+                ${t`Delete`}
+            </button>
+        </ak-forms-delete-bulk>`;
     }
 
     row(item: Flow): TemplateResult[] {
@@ -58,104 +95,69 @@ export class FlowListPage extends TablePage<Flow> {
                 <code>${item.slug}</code>
             </a>`,
             html`${item.name}`,
-            html`${item.designation}`,
             html`${Array.from(item.stages || []).length}`,
             html`${Array.from(item.policies || []).length}`,
-            html`
-            <ak-forms-modal>
-                <span slot="submit">
-                    ${t`Update`}
-                </span>
-                <span slot="header">
-                    ${t`Update Flow`}
-                </span>
-                <ak-flow-form slot="form" .instancePk=${item.slug}>
-                </ak-flow-form>
-                <button slot="trigger" class="pf-c-button pf-m-secondary">
-                    ${t`Edit`}
+            html` <ak-forms-modal>
+                    <span slot="submit"> ${t`Update`} </span>
+                    <span slot="header"> ${t`Update Flow`} </span>
+                    <ak-flow-form slot="form" .instancePk=${item.slug}> </ak-flow-form>
+                    <button slot="trigger" class="pf-c-button pf-m-plain">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </ak-forms-modal>
+                <button
+                    class="pf-c-button pf-m-plain"
+                    @click=${() => {
+                        new FlowsApi(DEFAULT_CONFIG)
+                            .flowsInstancesExecuteRetrieve({
+                                slug: item.slug,
+                            })
+                            .then((link) => {
+                                window.open(
+                                    `${link.link}?inspector&next=/%23${window.location.href}`,
+                                );
+                            });
+                    }}
+                >
+                    <i class="fas fa-play"></i>
                 </button>
-            </ak-forms-modal>
-            <ak-forms-delete
-                .obj=${item}
-                objectLabel=${t`Flow`}
-                .usedBy=${() => {
-                    return new FlowsApi(DEFAULT_CONFIG).flowsInstancesUsedByList({
-                        slug: item.slug
-                    });
-                }}
-                .delete=${() => {
-                    return new FlowsApi(DEFAULT_CONFIG).flowsInstancesDestroy({
-                        slug: item.slug
-                    });
-                }}>
-                <button slot="trigger" class="pf-c-button pf-m-danger">
-                    ${t`Delete`}
-                </button>
-            </ak-forms-delete>
-            <button
-                class="pf-c-button pf-m-secondary"
-                @click=${() => {
-                    new FlowsApi(DEFAULT_CONFIG).flowsInstancesExecuteRetrieve({
-                        slug: item.slug
-                    }).then(link => {
-                        window.location.assign(`${link.link}?next=/%23${window.location.href}`);
-                    });
-                }}>
-                ${t`Execute`}
-            </button>
-            <a class="pf-c-button pf-m-secondary" href=${item.exportUrl}>
-                ${t`Export`}
-            </a>`,
+                <a class="pf-c-button pf-m-plain" href=${item.exportUrl}>
+                    <i class="fas fa-download"></i>
+                </a>`,
         ];
     }
 
     renderToolbar(): TemplateResult {
-        return html`
-        <ak-forms-modal>
-            <span slot="submit">
-                ${t`Create`}
-            </span>
-            <span slot="header">
-                ${t`Create Flow`}
-            </span>
-            <ak-flow-form slot="form">
-            </ak-flow-form>
-            <button slot="trigger" class="pf-c-button pf-m-primary">
-                ${t`Create`}
-            </button>
-        </ak-forms-modal>
-        <ak-forms-modal>
-            <span slot="submit">
-                ${t`Import`}
-            </span>
-            <span slot="header">
-                ${t`Import Flow`}
-            </span>
-            <ak-flow-import-form slot="form">
-            </ak-flow-import-form>
-            <button slot="trigger" class="pf-c-button pf-m-primary">
-                ${t`Import`}
-            </button>
-        </ak-forms-modal>
-        ${super.renderToolbar()}
-        <ak-forms-confirm
-            successMessage=${t`Successfully cleared flow cache`}
-            errorMessage=${t`Failed to delete flow cache`}
-            action=${t`Clear cache`}
-            .onConfirm=${() => {
-                return new FlowsApi(DEFAULT_CONFIG).flowsInstancesCacheClearCreate();
-            }}>
-            <span slot="header">
-                ${t`Clear Flow cache`}
-            </span>
-            <p slot="body">
-                ${t`Are you sure you want to clear the flow cache?
+        return html` <ak-forms-modal>
+                <span slot="submit"> ${t`Create`} </span>
+                <span slot="header"> ${t`Create Flow`} </span>
+                <ak-flow-form slot="form"> </ak-flow-form>
+                <button slot="trigger" class="pf-c-button pf-m-primary">${t`Create`}</button>
+            </ak-forms-modal>
+            <ak-forms-modal>
+                <span slot="submit"> ${t`Import`} </span>
+                <span slot="header"> ${t`Import Flow`} </span>
+                <ak-flow-import-form slot="form"> </ak-flow-import-form>
+                <button slot="trigger" class="pf-c-button pf-m-primary">${t`Import`}</button>
+            </ak-forms-modal>
+            ${super.renderToolbar()}
+            <ak-forms-confirm
+                successMessage=${t`Successfully cleared flow cache`}
+                errorMessage=${t`Failed to delete flow cache`}
+                action=${t`Clear cache`}
+                .onConfirm=${() => {
+                    return new FlowsApi(DEFAULT_CONFIG).flowsInstancesCacheClearCreate();
+                }}
+            >
+                <span slot="header"> ${t`Clear Flow cache`} </span>
+                <p slot="body">
+                    ${t`Are you sure you want to clear the flow cache?
                     This will cause all flows to be re-evaluated on their next usage.`}
-            </p>
-            <button slot="trigger" class="pf-c-button pf-m-secondary" type="button">
-                ${t`Clear cache`}
-            </button>
-            <div slot="modal"></div>
-        </ak-forms-confirm>`;
+                </p>
+                <button slot="trigger" class="pf-c-button pf-m-secondary" type="button">
+                    ${t`Clear cache`}
+                </button>
+                <div slot="modal"></div>
+            </ak-forms-confirm>`;
     }
 }

@@ -10,7 +10,7 @@ from django.views.generic.base import View
 from structlog.stdlib import get_logger
 
 from authentik.core.models import Application, Provider, User
-from authentik.flows.views import SESSION_KEY_APPLICATION_PRE
+from authentik.flows.views.executor import SESSION_KEY_APPLICATION_PRE
 from authentik.lib.sentry import SentryIgnoredException
 from authentik.policies.denied import AccessDeniedResponse
 from authentik.policies.engine import PolicyEngine
@@ -102,9 +102,7 @@ class PolicyAccessView(AccessMixin, View):
     def user_has_access(self, user: Optional[User] = None) -> PolicyResult:
         """Check if user has access to application."""
         user = user or self.request.user
-        policy_engine = PolicyEngine(
-            self.application, user or self.request.user, self.request
-        )
+        policy_engine = PolicyEngine(self.application, user or self.request.user, self.request)
         policy_engine.use_cache = False
         policy_engine.build()
         result = policy_engine.result

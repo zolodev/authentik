@@ -28,9 +28,7 @@ SCOPE_AK_PROXY = "ak_proxy"
 
 def get_cookie_secret():
     """Generate random 32-character string for cookie-secret"""
-    return "".join(
-        SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(32)
-    )
+    return "".join(SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(32))
 
 
 def _get_callback_url(uri: str) -> str:
@@ -53,9 +51,7 @@ class ProxyProvider(OutpostModel, OAuth2Provider):
         validators=[DomainlessURLValidator(schemes=("http", "https"))],
         blank=True,
     )
-    external_host = models.TextField(
-        validators=[DomainlessURLValidator(schemes=("http", "https"))]
-    )
+    external_host = models.TextField(validators=[DomainlessURLValidator(schemes=("http", "https"))])
     internal_host_ssl_validation = models.BooleanField(
         default=True,
         help_text=_("Validate SSL Certificates of upstream servers"),
@@ -101,11 +97,7 @@ class ProxyProvider(OutpostModel, OAuth2Provider):
     basic_auth_password_attribute = models.TextField(
         blank=True,
         verbose_name=_("HTTP-Basic Password Key"),
-        help_text=_(
-            (
-                "User/Group Attribute used for the password part of the HTTP-Basic Header."
-            )
-        ),
+        help_text=_(("User/Group Attribute used for the password part of the HTTP-Basic Header.")),
     )
 
     certificate = models.ForeignKey(
@@ -136,8 +128,8 @@ class ProxyProvider(OutpostModel, OAuth2Provider):
     def set_oauth_defaults(self):
         """Ensure all OAuth2-related settings are correct"""
         self.client_type = ClientTypes.CONFIDENTIAL
-        self.jwt_alg = JWTAlgorithms.RS256
-        self.rsa_key = CertificateKeyPair.objects.exclude(key_data__iexact="").first()
+        self.jwt_alg = JWTAlgorithms.HS256
+        self.rsa_key = None
         scopes = ScopeMapping.objects.filter(
             scope_name__in=[
                 SCOPE_OPENID,
@@ -146,13 +138,8 @@ class ProxyProvider(OutpostModel, OAuth2Provider):
                 SCOPE_AK_PROXY,
             ]
         )
-        self.property_mappings.set(scopes)
-        self.redirect_uris = "\n".join(
-            [
-                _get_callback_url(self.external_host),
-                _get_callback_url(self.internal_host),
-            ]
-        )
+        self.property_mappings.add(*list(scopes))
+        self.redirect_uris = _get_callback_url(self.external_host)
 
     def __str__(self):
         return f"Proxy Provider {self.name}"

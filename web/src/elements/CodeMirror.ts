@@ -1,25 +1,28 @@
-import { css, CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-
 import CodeMirror from "codemirror";
+import "codemirror/addon/dialog/dialog";
 import "codemirror/addon/display/autorefresh";
+import "codemirror/addon/hint/show-hint";
 import "codemirror/addon/search/search";
 import "codemirror/addon/search/searchcursor";
-import "codemirror/addon/dialog/dialog";
-import "codemirror/addon/hint/show-hint";
-import "codemirror/mode/xml/xml.js";
-import "codemirror/mode/yaml/yaml.js";
+import "codemirror/mode/htmlmixed/htmlmixed.js";
 import "codemirror/mode/javascript/javascript.js";
 import "codemirror/mode/python/python.js";
+import "codemirror/mode/xml/xml.js";
+import "codemirror/mode/yaml/yaml.js";
+import YAML from "yaml";
+
+import { CSSResult, LitElement, TemplateResult, css, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import CodeMirrorDialogStyle from "codemirror/addon/dialog/dialog.css";
+import CodeMirrorShowHintStyle from "codemirror/addon/hint/show-hint.css";
 import CodeMirrorStyle from "codemirror/lib/codemirror.css";
 import CodeMirrorTheme from "codemirror/theme/monokai.css";
-import CodeMirrorDialogStyle from "codemirror/addon/dialog/dialog.css";
-import CodeMirrorShowHintStyle from  "codemirror/addon/hint/show-hint.css";
-import { ifDefined } from "lit-html/directives/if-defined";
-import YAML from "yaml";
 
 @customElement("ak-codemirror")
 export class CodeMirrorTextarea extends LitElement {
-    @property({type: Boolean})
+    @property({ type: Boolean })
     readOnly = false;
 
     @property()
@@ -83,11 +86,17 @@ export class CodeMirrorTextarea extends LitElement {
     }
 
     static get styles(): CSSResult[] {
-        return [CodeMirrorStyle, CodeMirrorTheme, CodeMirrorDialogStyle, CodeMirrorShowHintStyle, css`
-            .CodeMirror-wrap pre {
-                word-break: break-word !important;
-            }
-        `];
+        return [
+            CodeMirrorStyle,
+            CodeMirrorTheme,
+            CodeMirrorDialogStyle,
+            CodeMirrorShowHintStyle,
+            css`
+                .CodeMirror-wrap pre {
+                    word-break: break-word !important;
+                }
+            `,
+        ];
     }
 
     firstUpdated(): void {
@@ -102,7 +111,7 @@ export class CodeMirrorTextarea extends LitElement {
             readOnly: this.readOnly,
             autoRefresh: true,
             lineWrapping: true,
-            value: this._value
+            value: this._value,
         });
         this.editor.on("blur", () => {
             this.editor?.save();

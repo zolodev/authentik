@@ -38,6 +38,7 @@ class TenantSerializer(ModelSerializer):
             "flow_invalidation",
             "flow_recovery",
             "flow_unenrollment",
+            "event_retention",
         ]
 
 
@@ -69,6 +70,7 @@ class TenantViewSet(UsedByMixin, ModelViewSet):
         "domain",
         "branding_title",
     ]
+    filterset_fields = "__all__"
     ordering = ["domain"]
 
     @extend_schema(

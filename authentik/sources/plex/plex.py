@@ -2,12 +2,12 @@
 from urllib.parse import urlencode
 
 from django.http.response import Http404
-from requests import Session
 from requests.exceptions import RequestException
 from structlog.stdlib import get_logger
 
 from authentik import __version__
 from authentik.core.sources.flow_manager import SourceFlowManager
+from authentik.lib.utils.http import get_http_session
 from authentik.sources.plex.models import PlexSource, PlexSourceConnection
 
 LOGGER = get_logger()
@@ -24,7 +24,7 @@ class PlexAuth:
     def __init__(self, source: PlexSource, token: str):
         self._source = source
         self._token = token
-        self._session = Session()
+        self._session = get_http_session()
         self._session.headers.update(
             {"Accept": "application/json", "Content-Type": "application/json"}
         )
@@ -36,7 +36,7 @@ class PlexAuth:
         return {
             "X-Plex-Product": "authentik",
             "X-Plex-Version": __version__,
-            "X-Plex-Device-Vendor": "BeryJu.org",
+            "X-Plex-Device-Vendor": "goauthentik.io",
         }
 
     def get_resources(self) -> list[dict]:
@@ -92,11 +92,24 @@ class PlexAuth:
                 if resource["provides"] != "server":
                     continue
                 if resource["clientIdentifier"] in self._source.allowed_servers:
-                    LOGGER.info(
-                        "Plex allowed access from server", name=resource["name"]
-                    )
+                    LOGGER.info("Plex allowed access from server", name=resource["name"])
                     return True
         return False
+
+    def check_friends_overlap(self, user_ident: int) -> bool:
+        """Check if the user is a friend of the owner, or the owner themselves"""
+        friends_allowed = False
+        _, owner_id = self.get_user_info()
+        owner_friends = self.get_friends()
+        for friend in owner_friends:
+            if int(friend.get("id", "0")) == user_ident:
+                friends_allowed = True
+                LOGGER.info(
+                    "allowing user for plex because of friend",
+                    user=user_ident,
+                )
+        owner_allowed = owner_id == user_ident
+        return any([friends_allowed, owner_allowed])
 
 
 class PlexSourceFlowManager(SourceFlowManager):
@@ -104,9 +117,7 @@ class PlexSourceFlowManager(SourceFlowManager):
 
     connection_type = PlexSourceConnection
 
-    def update_connection(
-        self, connection: PlexSourceConnection, **kwargs
-    ) -> PlexSourceConnection:
+    def update_connection(self, connection: PlexSourceConnection, **kwargs) -> PlexSourceConnection:
         """Set the access_token on the connection"""
         connection.plex_token = kwargs.get("plex_token")
         return connection

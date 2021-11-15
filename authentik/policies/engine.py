@@ -11,12 +11,7 @@ from sentry_sdk.tracing import Span
 from structlog.stdlib import BoundLogger, get_logger
 
 from authentik.core.models import User
-from authentik.policies.models import (
-    Policy,
-    PolicyBinding,
-    PolicyBindingModel,
-    PolicyEngineMode,
-)
+from authentik.policies.models import Policy, PolicyBinding, PolicyBindingModel, PolicyEngineMode
 from authentik.policies.process import PolicyProcess, cache_key
 from authentik.policies.types import PolicyRequest, PolicyResult
 from authentik.root.monitoring import UpdatingGauge
@@ -42,9 +37,7 @@ class PolicyProcessInfo:
     result: Optional[PolicyResult]
     binding: PolicyBinding
 
-    def __init__(
-        self, process: PolicyProcess, connection: Connection, binding: PolicyBinding
-    ):
+    def __init__(self, process: PolicyProcess, connection: Connection, binding: PolicyBinding):
         self.process = process
         self.connection = connection
         self.binding = binding
@@ -62,9 +55,7 @@ class PolicyEngine:
     # Allow objects with no policies attached to pass
     empty_result: bool
 
-    def __init__(
-        self, pbm: PolicyBindingModel, user: User, request: HttpRequest = None
-    ):
+    def __init__(self, pbm: PolicyBindingModel, user: User, request: HttpRequest = None):
         self.logger = get_logger().bind()
         self.mode = pbm.policy_engine_mode
         # For backwards compatibility, set empty_result to true
@@ -90,11 +81,11 @@ class PolicyEngine:
             .iterator()
         )
 
-    def _check_policy_type(self, policy: Policy):
+    def _check_policy_type(self, binding: PolicyBinding):
         """Check policy type, make sure it's not the root class as that has no logic implemented"""
         # pyright: reportGeneralTypeIssues=false
-        if policy.__class__ == Policy:
-            raise TypeError(f"Policy '{policy}' is root type")
+        if binding.policy is not None and binding.policy.__class__ == Policy:
+            raise TypeError(f"Policy '{binding.policy}' is root type")
 
     def build(self) -> "PolicyEngine":
         """Build wrapper which monitors performance"""
@@ -111,7 +102,7 @@ class PolicyEngine:
             for binding in self._iter_bindings():
                 self.__expected_result_count += 1
 
-                self._check_policy_type(binding.policy)
+                self._check_policy_type(binding)
                 key = cache_key(binding, self.request)
                 cached_policy = cache.get(key, None)
                 if cached_policy and self.use_cache:
@@ -123,15 +114,11 @@ class PolicyEngine:
                     )
                     self.__cached_policies.append(cached_policy)
                     continue
-                self.logger.debug(
-                    "P_ENG: Evaluating policy", binding=binding, request=self.request
-                )
+                self.logger.debug("P_ENG: Evaluating policy", binding=binding, request=self.request)
                 our_end, task_end = Pipe(False)
                 task = PolicyProcess(binding, self.request, task_end)
                 task.daemon = False
-                self.logger.debug(
-                    "P_ENG: Starting Process", binding=binding, request=self.request
-                )
+                self.logger.debug("P_ENG: Starting Process", binding=binding, request=self.request)
                 if not CURRENT_PROCESS._config.get("daemon"):
                     task.run()
                 else:
@@ -151,9 +138,7 @@ class PolicyEngine:
     @property
     def result(self) -> PolicyResult:
         """Get policy-checking result"""
-        process_results: list[PolicyResult] = [
-            x.result for x in self.__processes if x.result
-        ]
+        process_results: list[PolicyResult] = [x.result for x in self.__processes if x.result]
         all_results = list(process_results + self.__cached_policies)
         if len(all_results) < self.__expected_result_count:  # pragma: no cover
             raise AssertionError("Got less results than polices")

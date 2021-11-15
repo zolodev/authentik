@@ -1,6 +1,7 @@
 """Kubernetes Deployment Reconciler"""
 from typing import TYPE_CHECKING
 
+from django.utils.text import slugify
 from kubernetes.client import (
     AppsV1Api,
     V1Container,
@@ -11,16 +12,16 @@ from kubernetes.client import (
     V1EnvVarSource,
     V1LabelSelector,
     V1ObjectMeta,
+    V1ObjectReference,
     V1PodSpec,
     V1PodTemplateSpec,
     V1SecretKeySelector,
 )
 
 from authentik.outposts.controllers.base import FIELD_MANAGER
-from authentik.outposts.controllers.k8s.base import (
-    KubernetesObjectReconciler,
-    NeedsUpdate,
-)
+from authentik.outposts.controllers.k8s.base import KubernetesObjectReconciler
+from authentik.outposts.controllers.k8s.triggers import NeedsUpdate
+from authentik.outposts.controllers.k8s.utils import compare_ports
 from authentik.outposts.models import Outpost
 
 if TYPE_CHECKING:
@@ -38,7 +39,10 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
         self.outpost = self.controller.outpost
 
     def reconcile(self, current: V1Deployment, reference: V1Deployment):
-        super().reconcile(current, reference)
+        compare_ports(
+            current.spec.template.spec.containers[0].ports,
+            reference.spec.template.spec.containers[0].ports,
+        )
         if current.spec.replicas != reference.spec.replicas:
             raise NeedsUpdate()
         if (
@@ -46,6 +50,7 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
             != reference.spec.template.spec.containers[0].image
         ):
             raise NeedsUpdate()
+        super().reconcile(current, reference)
 
     def get_pod_meta(self) -> dict[str, str]:
         """Get common object metadata"""
@@ -53,6 +58,8 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
             "app.kubernetes.io/name": "authentik-outpost",
             "app.kubernetes.io/managed-by": "goauthentik.io",
             "goauthentik.io/outpost-uuid": self.controller.outpost.uuid.hex,
+            "goauthentik.io/outpost-name": slugify(self.controller.outpost.name),
+            "goauthentik.io/outpost-type": str(self.controller.outpost.type),
         }
 
     def get_reference_object(self) -> V1Deployment:
@@ -69,6 +76,7 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
             )
         meta = self.get_object_meta(name=self.name)
         image_name = self.controller.get_container_image()
+        image_pull_secrets = self.outpost.config.kubernetes_image_pull_secrets
         return V1Deployment(
             metadata=meta,
             spec=V1DeploymentSpec(
@@ -77,6 +85,9 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
                 template=V1PodTemplateSpec(
                     metadata=V1ObjectMeta(labels=self.get_pod_meta()),
                     spec=V1PodSpec(
+                        image_pull_secrets=[
+                            V1ObjectReference(name=secret) for secret in image_pull_secrets
+                        ],
                         containers=[
                             V1Container(
                                 name=str(self.outpost.type),
@@ -89,6 +100,15 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
                                             secret_key_ref=V1SecretKeySelector(
                                                 name=self.name,
                                                 key="authentik_host",
+                                            )
+                                        ),
+                                    ),
+                                    V1EnvVar(
+                                        name="AUTHENTIK_HOST_BROWSER",
+                                        value_from=V1EnvVarSource(
+                                            secret_key_ref=V1SecretKeySelector(
+                                                name=self.name,
+                                                key="authentik_host_browser",
                                             )
                                         ),
                                     ),
@@ -112,7 +132,7 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
                                     ),
                                 ],
                             )
-                        ]
+                        ],
                     ),
                 ),
             ),
@@ -124,9 +144,7 @@ class DeploymentReconciler(KubernetesObjectReconciler[V1Deployment]):
         )
 
     def delete(self, reference: V1Deployment):
-        return self.api.delete_namespaced_deployment(
-            reference.metadata.name, self.namespace
-        )
+        return self.api.delete_namespaced_deployment(reference.metadata.name, self.namespace)
 
     def retrieve(self) -> V1Deployment:
         return self.api.read_namespaced_deployment(self.name, self.namespace)

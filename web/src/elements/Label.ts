@@ -1,7 +1,9 @@
-import { CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
-import PFLabel from "@patternfly/patternfly/components/Label/label.css";
+import { CSSResult, LitElement, TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
 import AKGlobal from "../authentik.css";
+import PFLabel from "@patternfly/patternfly/components/Label/label.css";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
 
 export enum PFColor {
     Green = "pf-m-green",
@@ -12,7 +14,6 @@ export enum PFColor {
 
 @customElement("ak-label")
 export class Label extends LitElement {
-
     @property()
     color: PFColor = PFColor.Grey;
 
@@ -45,11 +46,14 @@ export class Label extends LitElement {
         return html`<span class="pf-c-label ${this.color}">
             <span class="pf-c-label__content">
                 <span class="pf-c-label__icon">
-                    <i class="fas ${this.text ? "fa-fw" : ""} ${this.icon || this.getDefaultIcon()}" aria-hidden="true"></i>
+                    <i
+                        class="fas ${this.text ? "fa-fw" : ""} ${this.icon ||
+                        this.getDefaultIcon()}"
+                        aria-hidden="true"
+                    ></i>
                 </span>
                 ${this.text || ""}
             </span>
         </span>`;
     }
-
 }

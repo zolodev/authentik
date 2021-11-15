@@ -1,7 +1,8 @@
-import { Config, Configuration, CoreApi, CurrentTenant, Middleware, ResponseContext, RootApi, Tenant } from "authentik-api";
+import { Config, Configuration, CoreApi, CurrentTenant, Middleware, ResponseContext, RootApi } from "@goauthentik/api";
 import { getCookie } from "../utils";
-import { API_DRAWER_MIDDLEWARE } from "../elements/notifications/APIDrawer";
+import { APIMiddleware } from "../elements/notifications/APIDrawer";
 import { MessageMiddleware } from "../elements/messages/Middleware";
+import { VERSION } from "../constants";
 
 export class LoggingMiddleware implements Middleware {
 
@@ -9,15 +10,7 @@ export class LoggingMiddleware implements Middleware {
         tenant().then(tenant => {
             let msg = `authentik/api[${tenant.matchedDomain}]: `;
             msg += `${context.response.status} ${context.init.method} ${context.url}`;
-            if (context.response.status >= 400) {
-                const resClone = context.response.clone();
-                resClone.text().then(t => {
-                    msg += ` => ${t}`;
-                    console.debug(msg);
-                });
-            } else {
-                console.debug(msg);
-            }
+            console.debug(msg);
         });
         return Promise.resolve(context.response);
     }
@@ -57,13 +50,22 @@ export function tenant(): Promise<CurrentTenant> {
 }
 
 export const DEFAULT_CONFIG = new Configuration({
-    basePath: "",
+    basePath: process.env.AK_API_BASE_PATH + "/api/v3",
     headers: {
         "X-CSRFToken": getCookie("authentik_csrf"),
     },
     middleware: [
-        API_DRAWER_MIDDLEWARE,
+        new APIMiddleware(),
         new MessageMiddleware(),
         new LoggingMiddleware(),
     ],
 });
+
+// This is just a function so eslint doesn't complain about
+// missing-whitespace-between-attributes or
+// unexpected-character-in-attribute-name
+export function AndNext(url: string): string {
+    return `?next=${encodeURIComponent(url)}`;
+}
+
+console.debug(`authentik(early): version ${VERSION}, apiBase ${DEFAULT_CONFIG.basePath}`);

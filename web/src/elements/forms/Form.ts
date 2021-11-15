@@ -1,48 +1,60 @@
-import "@polymer/paper-input/paper-input";
 import "@polymer/iron-form/iron-form";
+import { IronFormElement } from "@polymer/iron-form/iron-form";
+import "@polymer/paper-input/paper-input";
 import { PaperInputElement } from "@polymer/paper-input/paper-input";
-import { showMessage } from "../../elements/messages/MessageContainer";
-import { css, CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
-import PFCard from "@patternfly/patternfly/components/Card/card.css";
-import PFButton from "@patternfly/patternfly/components/Button/button.css";
+
+import { CSSResult, LitElement, TemplateResult, css, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
 import AKGlobal from "../../authentik.css";
+import PFAlert from "@patternfly/patternfly/components/Alert/alert.css";
+import PFButton from "@patternfly/patternfly/components/Button/button.css";
+import PFCard from "@patternfly/patternfly/components/Card/card.css";
 import PFForm from "@patternfly/patternfly/components/Form/form.css";
 import PFFormControl from "@patternfly/patternfly/components/FormControl/form-control.css";
-import PFAlert from "@patternfly/patternfly/components/Alert/alert.css";
 import PFInputGroup from "@patternfly/patternfly/components/InputGroup/input-group.css";
-import { MessageLevel } from "../messages/Message";
-import { IronFormElement } from "@polymer/iron-form/iron-form";
-import { camelToSnake, convertToSlug } from "../../utils";
-import { ValidationError } from "authentik-api";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
+
+import { ValidationError } from "@goauthentik/api";
+
 import { EVENT_REFRESH } from "../../constants";
+import { showMessage } from "../../elements/messages/MessageContainer";
+import { camelToSnake, convertToSlug } from "../../utils";
+import { MessageLevel } from "../messages/Message";
 
 export class APIError extends Error {
-
     constructor(public response: ValidationError) {
         super();
     }
-
 }
 
 @customElement("ak-form")
 export class Form<T> extends LitElement {
-
     @property()
     successMessage = "";
 
     @property()
     send!: (data: T) => Promise<unknown>;
 
-    @property({attribute: false})
+    @property({ attribute: false })
     nonFieldErrors?: string[];
 
     static get styles(): CSSResult[] {
-        return [PFBase, PFCard, PFButton, PFForm, PFAlert, PFInputGroup, PFFormControl, AKGlobal, css`
-            select[multiple] {
-                height: 15em;
-            }
-        `];
+        return [
+            PFBase,
+            PFCard,
+            PFButton,
+            PFForm,
+            PFAlert,
+            PFInputGroup,
+            PFFormControl,
+            AKGlobal,
+            css`
+                select[multiple] {
+                    height: 15em;
+                }
+            `,
+        ];
     }
 
     get isInViewport(): boolean {
@@ -55,25 +67,27 @@ export class Form<T> extends LitElement {
     }
 
     updated(): void {
-        this.shadowRoot?.querySelectorAll<HTMLInputElement>("input[name=name]").forEach(nameInput => {
-            const form = nameInput.closest("form");
-            if (form === null) {
-                return;
-            }
-            const slugField = form.querySelector<HTMLInputElement>("input[name=slug]");
-            if (!slugField) {
-                return;
-            }
-            // Only attach handler if the slug is already equal to the name
-            // if not, they are probably completely different and shouldn't update
-            // each other
-            if (convertToSlug(nameInput.value) !== slugField.value) {
-                return;
-            }
-            nameInput.addEventListener("input", () => {
-                slugField.value = convertToSlug(nameInput.value);
+        this.shadowRoot
+            ?.querySelectorAll<HTMLInputElement>("input[name=name]")
+            .forEach((nameInput) => {
+                const form = nameInput.closest("form");
+                if (form === null) {
+                    return;
+                }
+                const slugField = form.querySelector<HTMLInputElement>("input[name=slug]");
+                if (!slugField) {
+                    return;
+                }
+                // Only attach handler if the slug is already equal to the name
+                // if not, they are probably completely different and shouldn't update
+                // each other
+                if (convertToSlug(nameInput.value) !== slugField.value) {
+                    return;
+                }
+                nameInput.addEventListener("input", () => {
+                    slugField.value = convertToSlug(nameInput.value);
+                });
             });
-        });
     }
 
     /**
@@ -110,7 +124,7 @@ export class Form<T> extends LitElement {
     serializeForm(form: IronFormElement): T {
         const elements: HTMLInputElement[] = form._getSubmittableElements();
         const json: { [key: string]: unknown } = {};
-        elements.forEach(element => {
+        elements.forEach((element) => {
             const values = form._serializeElementValues(element);
             if (element.hidden) {
                 return;
@@ -119,15 +133,48 @@ export class Form<T> extends LitElement {
                 json[element.name] = values;
             } else if (element.tagName.toLowerCase() === "input" && element.type === "date") {
                 json[element.name] = element.valueAsDate;
+            } else if (
+                element.tagName.toLowerCase() === "input" &&
+                element.type === "datetime-local"
+            ) {
+                json[element.name] = new Date(element.valueAsNumber);
+            } else if (
+                element.tagName.toLowerCase() === "input" &&
+                "type" in element.dataset &&
+                element.dataset["type"] === "datetime-local"
+            ) {
+                // Workaround for Firefox <93, since 92 and older don't support
+                // datetime-local fields
+                json[element.name] = new Date(element.value);
             } else if (element.tagName.toLowerCase() === "input" && element.type === "checkbox") {
                 json[element.name] = element.checked;
             } else {
                 for (let v = 0; v < values.length; v++) {
-                    form._addSerializedElement(json, element.name, values[v]);
+                    this.serializeFieldRecursive(element, values[v], json);
                 }
             }
         });
         return json as unknown as T;
+    }
+
+    private serializeFieldRecursive(
+        element: HTMLInputElement,
+        value: unknown,
+        json: { [key: string]: unknown },
+    ): void {
+        let parent = json;
+        if (!element.name.includes(".")) {
+            parent[element.name] = value;
+            return;
+        }
+        const nameElements = element.name.split(".");
+        for (let index = 0; index < nameElements.length - 1; index++) {
+            const nameEl = nameElements[index];
+            // Ensure all nested structures exist
+            if (!(nameEl in parent)) parent[nameEl] = {};
+            parent = parent[nameEl] as { [key: string]: unknown };
+        }
+        parent[nameElements[nameElements.length - 1]] = value;
     }
 
     submit(ev: Event): Promise<unknown> | undefined {
@@ -138,24 +185,27 @@ export class Form<T> extends LitElement {
             return;
         }
         const data = this.serializeForm(ironForm);
-        return this.send(data).then((r) => {
-            showMessage({
-                level: MessageLevel.success,
-                message: this.getSuccessMessage()
-            });
-            this.dispatchEvent(
-                new CustomEvent(EVENT_REFRESH, {
-                    bubbles: true,
-                    composed: true,
-                })
-            );
-            return r;
-        }).catch((ex: Response | Error) => {
-            if (ex instanceof Error) {
-                throw ex;
-            }
-            if (ex.status > 399 && ex.status < 500) {
-                return ex.json().then((errorMessage: ValidationError) => {
+        return this.send(data)
+            .then((r) => {
+                showMessage({
+                    level: MessageLevel.success,
+                    message: this.getSuccessMessage(),
+                });
+                this.dispatchEvent(
+                    new CustomEvent(EVENT_REFRESH, {
+                        bubbles: true,
+                        composed: true,
+                    }),
+                );
+                return r;
+            })
+            .catch(async (ex: Response | Error) => {
+                if (ex instanceof Error) {
+                    throw ex;
+                }
+                let msg = ex.statusText;
+                if (ex.status > 399 && ex.status < 500) {
+                    const errorMessage: ValidationError = await ex.json();
                     if (!errorMessage) return errorMessage;
                     if (errorMessage instanceof Error) {
                         throw errorMessage;
@@ -166,26 +216,31 @@ export class Form<T> extends LitElement {
                         const elementName = element.name;
                         if (!elementName) return;
                         if (camelToSnake(elementName) in errorMessage) {
-                            element.errorMessage = errorMessage[camelToSnake(elementName)].join(", ");
+                            element.errorMessage =
+                                errorMessage[camelToSnake(elementName)].join(", ");
                             element.invalid = true;
+                        } else {
+                            element.errorMessage = "";
+                            element.invalid = false;
                         }
                     });
                     if ("non_field_errors" in errorMessage) {
                         this.nonFieldErrors = errorMessage["non_field_errors"];
                     }
-                    throw new APIError(errorMessage);
+                    // Only change the message when we have `detail`.
+                    // Everything else is handled in the form.
+                    if ("detail" in errorMessage) {
+                        msg = errorMessage.detail;
+                    }
+                }
+                // error is local or not from rest_framework
+                showMessage({
+                    message: msg,
+                    level: MessageLevel.error,
                 });
-            }
-            throw ex;
-        }).catch((ex: Error) => {
-            // error is local or not from rest_framework
-            showMessage({
-                message: ex.toString(),
-                level: MessageLevel.error,
+                // rethrow the error so the form doesn't close
+                throw ex;
             });
-            // rethrow the error so the form doesn't close
-            throw ex;
-        });
     }
 
     renderForm(): TemplateResult {
@@ -197,24 +252,24 @@ export class Form<T> extends LitElement {
             return html``;
         }
         return html`<div class="pf-c-form__alert">
-        ${this.nonFieldErrors.map(err => {
-            return html`<div class="pf-c-alert pf-m-inline pf-m-danger">
-                <div class="pf-c-alert__icon">
-                    <i class="fas fa-exclamation-circle"></i>
-                </div>
-                <h4 class="pf-c-alert__title">
-                    ${err}
-                </h4>
-            </div>`;
-        })}
+            ${this.nonFieldErrors.map((err) => {
+                return html`<div class="pf-c-alert pf-m-inline pf-m-danger">
+                    <div class="pf-c-alert__icon">
+                        <i class="fas fa-exclamation-circle"></i>
+                    </div>
+                    <h4 class="pf-c-alert__title">${err}</h4>
+                </div>`;
+            })}
         </div>`;
     }
 
     renderVisible(): TemplateResult {
         return html`<iron-form
-            @iron-form-presubmit=${(ev: Event) => { this.submit(ev); }}>
-            ${this.renderNonFieldErrors()}
-            ${this.renderForm()}
+            @iron-form-presubmit=${(ev: Event) => {
+                this.submit(ev);
+            }}
+        >
+            ${this.renderNonFieldErrors()} ${this.renderForm()}
         </iron-form>`;
     }
 
@@ -224,5 +279,4 @@ export class Form<T> extends LitElement {
         }
         return this.renderVisible();
     }
-
 }

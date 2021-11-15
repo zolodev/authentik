@@ -12,7 +12,7 @@ from authentik.flows.challenge import (
 )
 from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
 from authentik.flows.stage import ChallengeStageView
-from authentik.flows.views import InvalidStageError
+from authentik.flows.views.executor import InvalidStageError
 from authentik.stages.authenticator_duo.models import AuthenticatorDuoStage, DuoDevice
 
 LOGGER = get_logger()
@@ -55,9 +55,7 @@ class AuthenticatorDuoStageView(ChallengeStageView):
             raise InvalidStageError(str(exc)) from exc
         user_id = enroll["user_id"]
         self.request.session[SESSION_KEY_DUO_USER_ID] = user_id
-        self.request.session[SESSION_KEY_DUO_ACTIVATION_CODE] = enroll[
-            "activation_code"
-        ]
+        self.request.session[SESSION_KEY_DUO_ACTIVATION_CODE] = enroll["activation_code"]
         return AuthenticatorDuoChallenge(
             data={
                 "type": ChallengeTypes.NATIVE.value,
@@ -87,10 +85,8 @@ class AuthenticatorDuoStageView(ChallengeStageView):
         self.request.session.pop(SESSION_KEY_DUO_ACTIVATION_CODE)
         if not existing_device:
             DuoDevice.objects.create(
-                user=self.get_pending_user(), duo_user_id=user_id, stage=stage
+                name="Duo Device", user=self.get_pending_user(), duo_user_id=user_id, stage=stage
             )
         else:
-            return self.executor.stage_invalid(
-                "Device with Credential ID already exists."
-            )
+            return self.executor.stage_invalid("Device with Credential ID already exists.")
         return self.executor.stage_ok()

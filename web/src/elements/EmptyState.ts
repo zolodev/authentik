@@ -1,21 +1,22 @@
-import { CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-import PFEmptyState from "@patternfly/patternfly/components/EmptyState/empty-state.css";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
-import PFTitle from "@patternfly/patternfly/components/Title/title.css";
+import { CSSResult, LitElement, TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
 import AKGlobal from "../authentik.css";
+import PFEmptyState from "@patternfly/patternfly/components/EmptyState/empty-state.css";
+import PFTitle from "@patternfly/patternfly/components/Title/title.css";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
 
 import { PFSize } from "./Spinner";
 
 @customElement("ak-empty-state")
 export class EmptyState extends LitElement {
-
-    @property({type: String})
+    @property({ type: String })
     icon = "";
 
-    @property({type: Boolean})
+    @property({ type: Boolean })
     loading = false;
 
-    @property({type: Boolean})
+    @property({ type: Boolean })
     fullHeight = false;
 
     @property()
@@ -28,14 +29,16 @@ export class EmptyState extends LitElement {
     render(): TemplateResult {
         return html`<div class="pf-c-empty-state ${this.fullHeight && "pf-m-full-height"}">
             <div class="pf-c-empty-state__content">
-                ${this.loading ?
-                    html`<div class="pf-c-empty-state__icon">
-                        <ak-spinner size=${PFSize.XLarge}></ak-spinner>
-                    </div>`:
-                    html`<i class="pf-icon fa ${this.icon || "fa-question-circle"} pf-c-empty-state__icon" aria-hidden="true"></i>`}
-                <h1 class="pf-c-title pf-m-lg">
-                    ${this.header}
-                </h1>
+                ${this.loading
+                    ? html`<div class="pf-c-empty-state__icon">
+                          <ak-spinner size=${PFSize.XLarge}></ak-spinner>
+                      </div>`
+                    : html`<i
+                          class="pf-icon fa ${this.icon ||
+                          "fa-question-circle"} pf-c-empty-state__icon"
+                          aria-hidden="true"
+                      ></i>`}
+                <h1 class="pf-c-title pf-m-lg">${this.header}</h1>
                 <div class="pf-c-empty-state__body">
                     <slot name="body"></slot>
                 </div>
@@ -45,5 +48,4 @@ export class EmptyState extends LitElement {
             </div>
         </div>`;
     }
-
 }

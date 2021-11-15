@@ -4,7 +4,7 @@ from re import split
 from typing import Optional
 
 import ldap3
-import ldap3.core.exceptions
+from ldap3.core.exceptions import LDAPAttributeError
 from structlog.stdlib import get_logger
 
 from authentik.core.models import User
@@ -67,9 +67,9 @@ class LDAPPasswordChanger:
                 search_scope=ldap3.BASE,
                 attributes=["pwdProperties"],
             )
-        except ldap3.core.exceptions.LDAPAttributeError:
+            root_attrs = list(root_attrs)[0]
+        except (LDAPAttributeError, KeyError, IndexError):
             return False
-        root_attrs = list(root_attrs)[0]
         raw_pwd_properties = root_attrs.get("attributes", {}).get("pwdProperties", None)
         if raw_pwd_properties is None:
             return False
@@ -86,7 +86,10 @@ class LDAPPasswordChanger:
         if not user_dn:
             LOGGER.info(f"User has no {LDAP_DISTINGUISHED_NAME} set.")
             return
-        self._source.connection.extend.microsoft.modify_password(user_dn, password)
+        try:
+            self._source.connection.extend.microsoft.modify_password(user_dn, password)
+        except LDAPAttributeError:
+            self._source.connection.extend.standard.modify_password(user_dn, new_password=password)
 
     def _ad_check_password_existing(self, password: str, user_dn: str) -> bool:
         """Check if a password contains sAMAccount or displayName"""
@@ -105,21 +108,21 @@ class LDAPPasswordChanger:
         if len(user_attributes["sAMAccountName"]) >= 3:
             if password.lower() in user_attributes["sAMAccountName"].lower():
                 return False
-        display_name_tokens = split(
-            RE_DISPLAYNAME_SEPARATORS, user_attributes["displayName"]
-        )
-        for token in display_name_tokens:
-            # Ignore tokens under 3 chars
-            if len(token) < 3:
-                continue
-            if token.lower() in password.lower():
-                return False
+        # No display name set, can't check any further
+        if len(user_attributes["displayName"]) < 1:
+            return True
+        for display_name in user_attributes["displayName"]:
+            display_name_tokens = split(RE_DISPLAYNAME_SEPARATORS, display_name)
+            for token in display_name_tokens:
+                # Ignore tokens under 3 chars
+                if len(token) < 3:
+                    continue
+                if token.lower() in password.lower():
+                    return False
         return True
 
-    def ad_password_complexity(
-        self, password: str, user: Optional[User] = None
-    ) -> bool:
-        """Check if password matches Active direcotry password policies
+    def ad_password_complexity(self, password: str, user: Optional[User] = None) -> bool:
+        """Check if password matches Active directory password policies
 
         https://docs.microsoft.com/en-us/windows/security/threat-protection/
             security-policy-settings/password-must-meet-complexity-requirements
@@ -158,7 +161,5 @@ class LDAPPasswordChanger:
                 must=required,
             )
             return False
-        LOGGER.debug(
-            "Password matched categories", has=matched_categories, must=required
-        )
+        LOGGER.debug("Password matched categories", has=matched_categories, must=required)
         return True

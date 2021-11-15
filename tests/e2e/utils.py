@@ -1,5 +1,6 @@
 """authentik e2e testing utilities"""
 import json
+import os
 from functools import lru_cache, wraps
 from os import environ, makedirs
 from time import sleep, time
@@ -13,13 +14,10 @@ from django.db.migrations.operations.special import RunPython
 from django.test.testcases import TransactionTestCase
 from django.urls import reverse
 from docker import DockerClient, from_env
+from docker.errors import DockerException
 from docker.models.containers import Container
 from selenium import webdriver
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    TimeoutException,
-    WebDriverException,
-)
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
@@ -40,6 +38,17 @@ def USER() -> User:  # noqa
     return User.objects.get(username="akadmin")
 
 
+def get_docker_tag() -> str:
+    """Get docker-tag based off of CI variables"""
+    env_pr_branch = "GITHUB_HEAD_REF"
+    default_branch = "GITHUB_REF"
+    branch_name = os.environ.get(default_branch, "master")
+    if os.environ.get(env_pr_branch, "") != "":
+        branch_name = os.environ[env_pr_branch]
+    branch_name = branch_name.replace("refs/heads/", "").replace("/", "-")
+    return f"gh-{branch_name}"
+
+
 class SeleniumTestCase(StaticLiveServerTestCase):
     """StaticLiveServerTestCase which automatically creates a Webdriver instance"""
 
@@ -48,6 +57,7 @@ class SeleniumTestCase(StaticLiveServerTestCase):
 
     def setUp(self):
         super().setUp()
+        self.maxDiff = None
         self.wait_timeout = 60
         self.driver = self._get_driver()
         self.driver.maximize_window()
@@ -57,9 +67,20 @@ class SeleniumTestCase(StaticLiveServerTestCase):
         if specs := self.get_container_specs():
             self.container = self._start_container(specs)
 
+    def get_container_image(self, base: str) -> str:
+        """Try to pull docker image based on git branch, fallback to master if not found."""
+        client: DockerClient = from_env()
+        image = f"{base}:gh-master"
+        try:
+            branch_image = f"{base}:{get_docker_tag()}"
+            client.images.pull(branch_image)
+            return branch_image
+        except DockerException:
+            client.images.pull(image)
+        return image
+
     def _start_container(self, specs: dict[str, Any]) -> Container:
         client: DockerClient = from_env()
-        client.images.pull(specs["image"])
         container = client.containers.run(**specs)
         if "healthcheck" not in specs:
             return container
@@ -85,24 +106,26 @@ class SeleniumTestCase(StaticLiveServerTestCase):
         return None
 
     def _get_driver(self) -> WebDriver:
-        return webdriver.Remote(
-            command_executor="http://localhost:4444/wd/hub",
-            desired_capabilities=DesiredCapabilities.CHROME,
-        )
+        count = 0
+        while count < RETRIES:
+            try:
+                return webdriver.Remote(
+                    command_executor="http://localhost:4444/wd/hub",
+                    desired_capabilities=DesiredCapabilities.CHROME,
+                )
+            except WebDriverException:
+                count += 1
+        raise ValueError(f"Webdriver failed after {RETRIES}.")
 
     def tearDown(self):
         if "TF_BUILD" in environ:
             makedirs("selenium_screenshots/", exist_ok=True)
-            screenshot_file = (
-                f"selenium_screenshots/{self.__class__.__name__}_{time()}.png"
-            )
+            screenshot_file = f"selenium_screenshots/{self.__class__.__name__}_{time()}.png"
             self.driver.save_screenshot(screenshot_file)
             self.logger.warning("Saved screenshot", file=screenshot_file)
         self.logger.debug("--------browser logs")
         for line in self.driver.get_log("browser"):
-            self.logger.debug(
-                line["message"], source=line["source"], level=line["level"]
-            )
+            self.logger.debug(line["message"], source=line["source"], level=line["level"])
         self.logger.debug("--------end browser logs")
         if self.container:
             self.output_container_logs()
@@ -121,47 +144,37 @@ class SeleniumTestCase(StaticLiveServerTestCase):
         """reverse `view` with `**kwargs` into full URL using live_server_url"""
         return self.live_server_url + reverse(view, kwargs=kwargs)
 
-    def if_admin_url(self, view) -> str:
+    def if_user_url(self, view) -> str:
         """same as self.url() but show URL in shell"""
-        return f"{self.live_server_url}/if/admin/#{view}"
+        return f"{self.live_server_url}/if/user/#{view}"
 
-    def get_shadow_root(
-        self, selector: str, container: Optional[WebElement] = None
-    ) -> WebElement:
+    def get_shadow_root(self, selector: str, container: Optional[WebElement] = None) -> WebElement:
         """Get shadow root element's inner shadowRoot"""
         if not container:
             container = self.driver
         shadow_root = container.find_element(By.CSS_SELECTOR, selector)
-        element = self.driver.execute_script(
-            "return arguments[0].shadowRoot", shadow_root
-        )
+        element = self.driver.execute_script("return arguments[0].shadowRoot", shadow_root)
         return element
 
     def login(self):
         """Do entire login flow and check user afterwards"""
         flow_executor = self.get_shadow_root("ak-flow-executor")
-        identification_stage = self.get_shadow_root(
-            "ak-stage-identification", flow_executor
-        )
+        identification_stage = self.get_shadow_root("ak-stage-identification", flow_executor)
 
-        identification_stage.find_element(
-            By.CSS_SELECTOR, "input[name=uidField]"
-        ).click()
-        identification_stage.find_element(
-            By.CSS_SELECTOR, "input[name=uidField]"
-        ).send_keys(USER().username)
-        identification_stage.find_element(
-            By.CSS_SELECTOR, "input[name=uidField]"
-        ).send_keys(Keys.ENTER)
+        identification_stage.find_element(By.CSS_SELECTOR, "input[name=uidField]").click()
+        identification_stage.find_element(By.CSS_SELECTOR, "input[name=uidField]").send_keys(
+            USER().username
+        )
+        identification_stage.find_element(By.CSS_SELECTOR, "input[name=uidField]").send_keys(
+            Keys.ENTER
+        )
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
         password_stage = self.get_shadow_root("ak-stage-password", flow_executor)
         password_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(
             USER().username
         )
-        password_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(
-            Keys.ENTER
-        )
+        password_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(Keys.ENTER)
         sleep(1)
 
     def assert_user(self, expected_user: User):

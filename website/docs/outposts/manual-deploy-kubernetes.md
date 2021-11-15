@@ -14,7 +14,7 @@ metadata:
     app.kubernetes.io/instance: __OUTPOST_NAME__
     app.kubernetes.io/managed-by: goauthentik.io
     app.kubernetes.io/name: authentik-proxy
-    app.kubernetes.io/version: 2021.6.4
+    app.kubernetes.io/version: 2021.10.4
   name: authentik-outpost-api
 stringData:
   authentik_host: "__AUTHENTIK_URL__"
@@ -29,16 +29,16 @@ metadata:
     app.kubernetes.io/instance: __OUTPOST_NAME__
     app.kubernetes.io/managed-by: goauthentik.io
     app.kubernetes.io/name: authentik-proxy
-    app.kubernetes.io/version: 2021.6.4
+    app.kubernetes.io/version: 2021.10.4
   name: authentik-outpost
 spec:
   ports:
     - name: http
-      port: 4180
+      port: 9000
       protocol: TCP
       targetPort: http
     - name: https
-      port: 4443
+      port: 9443s
       protocol: TCP
       targetPort: https
   type: ClusterIP
@@ -54,7 +54,7 @@ metadata:
     app.kubernetes.io/instance: __OUTPOST_NAME__
     app.kubernetes.io/managed-by: goauthentik.io
     app.kubernetes.io/name: authentik-proxy
-    app.kubernetes.io/version: 2021.6.4
+    app.kubernetes.io/version: 2021.10.4
   name: authentik-outpost
 spec:
   selector:
@@ -62,14 +62,14 @@ spec:
       app.kubernetes.io/instance: __OUTPOST_NAME__
       app.kubernetes.io/managed-by: goauthentik.io
       app.kubernetes.io/name: authentik-proxy
-      app.kubernetes.io/version: 2021.6.4
+      app.kubernetes.io/version: 2021.10.4
   template:
     metadata:
       labels:
         app.kubernetes.io/instance: __OUTPOST_NAME__
         app.kubernetes.io/managed-by: goauthentik.io
         app.kubernetes.io/name: authentik-proxy
-        app.kubernetes.io/version: 2021.6.4
+        app.kubernetes.io/version: 2021.10.4
     spec:
       containers:
         - env:
@@ -88,17 +88,17 @@ spec:
               secretKeyRef:
                 key: authentik_host_insecure
                 name: authentik-outpost-api
-        image: ghcr.io/goauthentik/proxy:2021.6.4
+        image: goauthentik.io/proxy:2021.10.4
         name: proxy
         ports:
-          - containerPort: 4180
+          - containerPort: 9000
             name: http
             protocol: TCP
-          - containerPort: 4443
+          - containerPort: 9443
             name: https
             protocol: TCP
 ---
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   annotations:
@@ -110,7 +110,7 @@ metadata:
     app.kubernetes.io/instance: __OUTPOST_NAME__
     app.kubernetes.io/managed-by: goauthentik.io
     app.kubernetes.io/name: authentik-proxy
-    app.kubernetes.io/version: 2021.6.4
+    app.kubernetes.io/version: 2021.10.4
   name: authentik-outpost
 spec:
   rules:
@@ -118,7 +118,9 @@ spec:
     http:
       paths:
       - backend:
-          serviceName: authentik-outpost
-          servicePort: http
+          service:
+            name: authentik-outpost
+            port:
+              name: http
         path: /
 ```

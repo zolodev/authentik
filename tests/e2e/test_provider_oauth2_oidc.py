@@ -14,6 +14,7 @@ from structlog.stdlib import get_logger
 from authentik.core.models import Application
 from authentik.crypto.models import CertificateKeyPair
 from authentik.flows.models import Flow
+from authentik.lib.generators import generate_id, generate_key
 from authentik.policies.expression.models import ExpressionPolicy
 from authentik.policies.models import PolicyBinding
 from authentik.providers.oauth2.constants import (
@@ -21,18 +22,8 @@ from authentik.providers.oauth2.constants import (
     SCOPE_OPENID_EMAIL,
     SCOPE_OPENID_PROFILE,
 )
-from authentik.providers.oauth2.generators import (
-    generate_client_id,
-    generate_client_secret,
-)
 from authentik.providers.oauth2.models import ClientTypes, OAuth2Provider, ScopeMapping
-from tests.e2e.utils import (
-    USER,
-    SeleniumTestCase,
-    apply_migration,
-    object_manager,
-    retry,
-)
+from tests.e2e.utils import USER, SeleniumTestCase, apply_migration, object_manager, retry
 
 LOGGER = get_logger()
 
@@ -42,8 +33,8 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
     """test OAuth with OpenID Provider flow"""
 
     def setUp(self):
-        self.client_id = generate_client_id()
-        self.client_secret = generate_client_secret()
+        self.client_id = generate_id()
+        self.client_secret = generate_key()
         self.application_slug = "test"
         super().setUp()
 
@@ -52,7 +43,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         sleep(1)
         client: DockerClient = from_env()
         container = client.containers.run(
-            image="ghcr.io/beryju/oidc-test-client:latest",
+            image="beryju.org/oidc-test-client:latest",
             detach=True,
             network_mode="host",
             auto_remove=True,
@@ -76,7 +67,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
             sleep(1)
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -118,7 +109,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -168,7 +159,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         self.assertEqual(body["UserInfo"]["email"], USER().email)
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -206,9 +197,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         self.driver.get("http://localhost:9009")
         self.login()
 
-        self.wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "ak-flow-executor"))
-        )
+        self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "ak-flow-executor")))
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
         consent_stage = self.get_shadow_root("ak-stage-consent", flow_executor)
@@ -235,7 +224,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         self.assertEqual(body["UserInfo"]["email"], USER().email)
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -276,9 +265,7 @@ class TestProviderOAuth2OIDC(SeleniumTestCase):
         self.container = self.setup_client()
         self.driver.get("http://localhost:9009")
         self.login()
-        self.wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "header > h1"))
-        )
+        self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "header > h1")))
         self.assertEqual(
             self.driver.find_element(By.CSS_SELECTOR, "header > h1").text,
             "Permission denied",

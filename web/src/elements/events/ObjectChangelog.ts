@@ -1,18 +1,20 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../api/Client";
-import { Table, TableColumn } from "../table/Table";
-import { Event, EventsApi } from "authentik-api";
 
-import "../forms/DeleteForm";
-import "../Tabs";
-import "../buttons/ModalButton";
-import "../buttons/SpinnerButton";
-import "../buttons/Dropdown";
-import "../../pages/events/EventInfo";
-import { PAGE_SIZE } from "../../constants";
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import { Event, EventsApi } from "@goauthentik/api";
+
+import { AKResponse } from "../../api/Client";
 import { DEFAULT_CONFIG } from "../../api/Config";
 import { EventWithContext } from "../../api/Events";
+import { uiConfig } from "../../common/config";
+import "../../pages/events/EventInfo";
+import "../Tabs";
+import "../buttons/Dropdown";
+import "../buttons/ModalButton";
+import "../buttons/SpinnerButton";
+import { Table, TableColumn } from "../table/Table";
 
 @customElement("ak-object-changelog")
 export class ObjectChangelog extends Table<Event> {
@@ -30,12 +32,12 @@ export class ObjectChangelog extends Table<Event> {
     @property()
     targetModelName!: string;
 
-    apiEndpoint(page: number): Promise<AKResponse<Event>> {
+    async apiEndpoint(page: number): Promise<AKResponse<Event>> {
         return new EventsApi(DEFAULT_CONFIG).eventsEventsList({
             action: "model_",
             page: page,
             ordering: this.order,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             contextModelApp: this.targetModelApp,
             contextModelName: this.targetModelName,
             contextModelPk: this.targetModelPk.toString(),
@@ -55,32 +57,28 @@ export class ObjectChangelog extends Table<Event> {
         return [
             html`${item.action}`,
             html`<div>${item.user?.username}</div>
-            ${item.user.on_behalf_of ? html`<small>
-                ${t`On behalf of ${item.user.on_behalf_of.username}`}
-            </small>` : html``}`,
+                ${item.user.on_behalf_of
+                    ? html`<small> ${t`On behalf of ${item.user.on_behalf_of.username}`} </small>`
+                    : html``}`,
             html`<span>${item.created?.toLocaleString()}</span>`,
-            html`<span>${item.clientIp || "-"}</span>`,
+            html`<span>${item.clientIp || t`-`}</span>`,
         ];
     }
 
     renderExpanded(item: Event): TemplateResult {
-        return html`
-        <td role="cell" colspan="4">
-            <div class="pf-c-table__expandable-row-content">
-                <ak-event-info .event=${item as EventWithContext}></ak-event-info>
-            </div>
-        </td>
-        <td></td>
-        <td></td>
-        <td></td>`;
+        return html` <td role="cell" colspan="4">
+                <div class="pf-c-table__expandable-row-content">
+                    <ak-event-info .event=${item as EventWithContext}></ak-event-info>
+                </div>
+            </td>
+            <td></td>
+            <td></td>
+            <td></td>`;
     }
 
     renderEmpty(): TemplateResult {
         return super.renderEmpty(html`<ak-empty-state header=${t`No Events found.`}>
-            <div slot="body">
-                ${t`No matching events could be found.`}
-            </div>
+            <div slot="body">${t`No matching events could be found.`}</div>
         </ak-empty-state>`);
     }
-
 }

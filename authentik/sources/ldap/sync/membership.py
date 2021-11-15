@@ -34,18 +34,22 @@ class MembershipLDAPSynchronizer(BaseLDAPSynchronizer):
         )
         membership_count = 0
         for group in groups:
-            members = group.get("attributes", {}).get(
-                self._source.group_membership_field, []
-            )
+            members = group.get("attributes", {}).get(self._source.group_membership_field, [])
             ak_group = self.get_group(group)
             if not ak_group:
                 continue
 
+            membership_mapping_attribute = LDAP_DISTINGUISHED_NAME
+            if self._source.group_membership_field == "memberUid":
+                # If memberships are based on the posixGroup's 'memberUid'
+                # attribute we use the RDN instead of the FDN to lookup members.
+                membership_mapping_attribute = LDAP_UNIQUENESS
+
             users = User.objects.filter(
-                Q(**{f"attributes__{LDAP_DISTINGUISHED_NAME}__in": members})
+                Q(**{f"attributes__{membership_mapping_attribute}__in": members})
                 | Q(
                     **{
-                        f"attributes__{LDAP_DISTINGUISHED_NAME}__isnull": True,
+                        f"attributes__{membership_mapping_attribute}__isnull": True,
                         "ak_groups__in": [ak_group],
                     }
                 )
@@ -60,25 +64,21 @@ class MembershipLDAPSynchronizer(BaseLDAPSynchronizer):
     def get_group(self, group_dict: dict[str, Any]) -> Optional[Group]:
         """Check if we fetched the group already, and if not cache it for later"""
         group_dn = group_dict.get("attributes", {}).get(LDAP_DISTINGUISHED_NAME, [])
-        group_uniq = group_dict.get("attributes", {}).get(
-            self._source.object_uniqueness_field, []
-        )
+        group_uniq = group_dict.get("attributes", {}).get(self._source.object_uniqueness_field, [])
         # group_uniq might be a single string or an array with (hopefully) a single string
         if isinstance(group_uniq, list):
             if len(group_uniq) < 1:
-                self._logger.warning(
-                    "Group does not have a uniqueness attribute.",
+                self.message(
+                    f"Group does not have a uniqueness attribute: '{group_dn}'",
                     group=group_dn,
                 )
                 return None
             group_uniq = group_uniq[0]
         if group_uniq not in self.group_cache:
-            groups = Group.objects.filter(
-                **{f"attributes__{LDAP_UNIQUENESS}": group_uniq}
-            )
+            groups = Group.objects.filter(**{f"attributes__{LDAP_UNIQUENESS}": group_uniq})
             if not groups.exists():
-                self._logger.warning(
-                    "Group does not exist in our DB yet, run sync_groups first.",
+                self.message(
+                    f"Group does not exist in our DB yet, run sync_groups first: '{group_dn}'",
                     group=group_dn,
                 )
                 return None

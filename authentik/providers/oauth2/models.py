@@ -22,13 +22,10 @@ from authentik.core.models import ExpiringModel, PropertyMapping, Provider, User
 from authentik.crypto.models import CertificateKeyPair
 from authentik.events.models import Event, EventAction
 from authentik.events.utils import get_user
+from authentik.lib.generators import generate_id, generate_key
 from authentik.lib.utils.time import timedelta_from_string, timedelta_string_validator
 from authentik.providers.oauth2.apps import AuthentikProviderOAuth2Config
 from authentik.providers.oauth2.constants import ACR_AUTHENTIK_DEFAULT
-from authentik.providers.oauth2.generators import (
-    generate_client_id,
-    generate_client_secret,
-)
 
 
 class ClientTypes(models.TextChoices):
@@ -141,13 +138,13 @@ class OAuth2Provider(Provider):
         max_length=255,
         unique=True,
         verbose_name=_("Client ID"),
-        default=generate_client_id,
+        default=generate_id,
     )
     client_secret = models.CharField(
         max_length=255,
         blank=True,
         verbose_name=_("Client Secret"),
-        default=generate_client_secret,
+        default=generate_key,
     )
     jwt_alg = models.CharField(
         max_length=10,
@@ -158,6 +155,7 @@ class OAuth2Provider(Provider):
     )
     redirect_uris = models.TextField(
         default="",
+        blank=True,
         verbose_name=_("Redirect URIs"),
         help_text=_("Enter each URI on a new line."),
     )
@@ -184,7 +182,7 @@ class OAuth2Provider(Provider):
         ),
     )
     token_validity = models.TextField(
-        default="minutes=10",
+        default="days=30",
         validators=[timedelta_string_validator],
         help_text=_(
             (
@@ -207,9 +205,7 @@ class OAuth2Provider(Provider):
     issuer_mode = models.TextField(
         choices=IssuerMode.choices,
         default=IssuerMode.PER_PROVIDER,
-        help_text=_(
-            ("Configure how the issuer field of the ID Token should be filled.")
-        ),
+        help_text=_(("Configure how the issuer field of the ID Token should be filled.")),
     )
 
     rsa_key = models.ForeignKey(
@@ -337,13 +333,9 @@ class AuthorizationCode(ExpiringModel, BaseGrantModel):
     """OAuth2 Authorization Code"""
 
     code = models.CharField(max_length=255, unique=True, verbose_name=_("Code"))
-    nonce = models.TextField(blank=True, default="", verbose_name=_("Nonce"))
-    is_open_id = models.BooleanField(
-        default=False, verbose_name=_("Is Authentication?")
-    )
-    code_challenge = models.CharField(
-        max_length=255, null=True, verbose_name=_("Code Challenge")
-    )
+    nonce = models.TextField(null=True, default=None, verbose_name=_("Nonce"))
+    is_open_id = models.BooleanField(default=False, verbose_name=_("Is Authentication?"))
+    code_challenge = models.CharField(max_length=255, null=True, verbose_name=_("Code Challenge"))
     code_challenge_method = models.CharField(
         max_length=255, null=True, verbose_name=_("Code Challenge Method")
     )
@@ -353,9 +345,7 @@ class AuthorizationCode(ExpiringModel, BaseGrantModel):
         """https://openid.net/specs/openid-connect-core-1_0.html#IDToken"""
         hashed_code = sha256(self.code.encode("ascii")).hexdigest().encode("ascii")
         return (
-            base64.urlsafe_b64encode(
-                binascii.unhexlify(hashed_code[: len(hashed_code) // 2])
-            )
+            base64.urlsafe_b64encode(binascii.unhexlify(hashed_code[: len(hashed_code) // 2]))
             .rstrip(b"=")
             .decode("ascii")
         )
@@ -406,9 +396,7 @@ class RefreshToken(ExpiringModel, BaseGrantModel):
     """OAuth2 Refresh Token"""
 
     access_token = models.TextField(verbose_name=_("Access Token"))
-    refresh_token = models.CharField(
-        max_length=255, unique=True, verbose_name=_("Refresh Token")
-    )
+    refresh_token = models.CharField(max_length=255, unique=True, verbose_name=_("Refresh Token"))
     _id_token = models.TextField(verbose_name=_("ID Token"))
 
     class Meta:
@@ -433,9 +421,7 @@ class RefreshToken(ExpiringModel, BaseGrantModel):
     @property
     def at_hash(self):
         """Get hashed access_token"""
-        hashed_access_token = (
-            sha256(self.access_token.encode("ascii")).hexdigest().encode("ascii")
-        )
+        hashed_access_token = sha256(self.access_token.encode("ascii")).hexdigest().encode("ascii")
         return (
             base64.urlsafe_b64encode(
                 binascii.unhexlify(hashed_access_token[: len(hashed_access_token) // 2])
@@ -462,7 +448,7 @@ class RefreshToken(ExpiringModel, BaseGrantModel):
         elif self.provider.sub_mode == SubModes.USER_USERNAME:
             sub = user.username
         elif self.provider.sub_mode == SubModes.USER_UPN:
-            sub = user.attributes["upn"]
+            sub = user.attributes.get("upn", user.uid)
         else:
             raise ValueError(
                 (
@@ -476,9 +462,9 @@ class RefreshToken(ExpiringModel, BaseGrantModel):
         iat_time = now
         exp_time = int(dateformat.format(self.expires, "U"))
         # We use the timestamp of the user's last successful login (EventAction.LOGIN) for auth_time
-        auth_events = Event.objects.filter(
-            action=EventAction.LOGIN, user=get_user(user)
-        ).order_by("-created")
+        auth_events = Event.objects.filter(action=EventAction.LOGIN, user=get_user(user)).order_by(
+            "-created"
+        )
         # Fallback in case we can't find any login events
         auth_time = datetime.now()
         if auth_events.exists():

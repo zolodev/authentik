@@ -1,17 +1,13 @@
 package ak
 
 import (
-	"context"
-	"crypto/tls"
 	"net/http"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/getsentry/sentry-go"
 	httptransport "github.com/go-openapi/runtime/client"
 	log "github.com/sirupsen/logrus"
-	"goauthentik.io/api"
 	"goauthentik.io/internal/constants"
 )
 
@@ -36,23 +32,33 @@ func doGlobalSetup(config map[string]interface{}) {
 	default:
 		log.SetLevel(log.DebugLevel)
 	}
-	log.WithField("buildHash", constants.BUILD()).WithField("version", constants.VERSION).Info("Starting authentik outpost")
+	log.WithField("logger", "authentik.outpost").WithField("hash", constants.BUILD()).WithField("version", constants.VERSION).Info("Starting authentik outpost")
 
+	sentryEnv := "customer-outpost"
+	sentryEnable := true
+	if cSentryEnv, ok := config[ConfigErrorReportingEnvironment]; ok {
+		if ccSentryEnv, ok := cSentryEnv.(string); ok {
+			sentryEnv = ccSentryEnv
+		}
+	}
 	var dsn string
-	if config[ConfigErrorReportingEnabled].(bool) {
+	if cSentryEnable, ok := config[ConfigErrorReportingEnabled]; ok {
+		if ccSentryEnable, ok := cSentryEnable.(bool); ok {
+			sentryEnable = ccSentryEnable
+		}
+	}
+	if sentryEnable {
 		dsn = "https://a579bb09306d4f8b8d8847c052d3a1d3@sentry.beryju.org/8"
-		log.Debug("Error reporting enabled")
+		log.WithField("env", sentryEnv).Debug("Error reporting enabled")
+		err := sentry.Init(sentry.ClientOptions{
+			Dsn:              dsn,
+			Environment:      sentryEnv,
+			TracesSampleRate: 1,
+		})
+		if err != nil {
+			log.Fatalf("sentry.Init: %s", err)
+		}
 	}
-
-	err := sentry.Init(sentry.ClientOptions{
-		Dsn:         dsn,
-		Environment: config[ConfigErrorReportingEnvironment].(string),
-	})
-	if err != nil {
-		log.Fatalf("sentry.Init: %s", err)
-	}
-
-	defer sentry.Flush(2 * time.Second)
 }
 
 // GetTLSTransport Get a TLS transport instance, that skips verification if configured via environment variables.
@@ -68,22 +74,4 @@ func GetTLSTransport() http.RoundTripper {
 		panic(err)
 	}
 	return tlsTransport
-}
-
-// ParseCertificate Load certificate from Keyepair UUID and parse it into a go Certificate
-func ParseCertificate(kpUuid string, cryptoApi *api.CryptoApiService) (*tls.Certificate, error) {
-	cert, _, err := cryptoApi.CryptoCertificatekeypairsViewCertificateRetrieve(context.Background(), kpUuid).Execute()
-	if err != nil {
-		return nil, err
-	}
-	key, _, err := cryptoApi.CryptoCertificatekeypairsViewPrivateKeyRetrieve(context.Background(), kpUuid).Execute()
-	if err != nil {
-		return nil, err
-	}
-
-	x509cert, err := tls.X509KeyPair([]byte(cert.Data), []byte(key.Data))
-	if err != nil {
-		return nil, err
-	}
-	return &x509cert, nil
 }

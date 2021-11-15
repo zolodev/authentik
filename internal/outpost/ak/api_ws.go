@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-openapi/strfmt"
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/recws-org/recws"
 	"goauthentik.io/internal/constants"
 )
@@ -39,7 +40,7 @@ func (ac *APIController) initWS(akURL url.URL, outpostUUID strfmt.UUID) {
 	}
 	ws.Dial(fmt.Sprintf(pathTemplate, scheme, akURL.Host, outpostUUID.String()), header)
 
-	ac.logger.WithField("logger", "authentik.outpost.ak-ws").WithField("outpost", outpostUUID.String()).Debug("connecting to authentik")
+	ac.logger.WithField("logger", "authentik.outpost.ak-ws").WithField("outpost", outpostUUID.String()).Debug("Connecting to authentik")
 
 	ac.wsConn = ws
 	// Send hello message with our version
@@ -55,6 +56,7 @@ func (ac *APIController) initWS(akURL url.URL, outpostUUID strfmt.UUID) {
 	if err != nil {
 		ac.logger.WithField("logger", "authentik.outpost.ak-ws").WithError(err).Warning("Failed to hello to authentik")
 	}
+	ac.lastWsReconnect = time.Now()
 }
 
 // Shutdown Gracefully stops all workers, disconnects from websocket
@@ -68,25 +70,54 @@ func (ac *APIController) Shutdown() {
 	}
 }
 
+func (ac *APIController) startWSReConnector() {
+	for {
+		time.Sleep(time.Second * 5)
+		if ac.wsConn.IsConnected() {
+			continue
+		}
+		if time.Since(ac.lastWsReconnect).Seconds() > 30 {
+			ac.wsConn.CloseAndReconnect()
+			ac.logger.Info("Reconnecting websocket")
+			ac.lastWsReconnect = time.Now()
+		}
+	}
+}
+
 func (ac *APIController) startWSHandler() {
 	logger := ac.logger.WithField("loop", "ws-handler")
 	for {
-		if !ac.wsConn.IsConnected() {
-			continue
-		}
 		var wsMsg websocketMessage
 		err := ac.wsConn.ReadJSON(&wsMsg)
 		if err != nil {
-			logger.WithError(err).Warning("ws write error, reconnecting")
-			ac.wsConn.CloseAndReconnect()
+			ConnectionStatus.With(prometheus.Labels{
+				"outpost_name": ac.Outpost.Name,
+				"outpost_type": ac.Server.Type(),
+				"uuid":         ac.instanceUUID.String(),
+			}).Set(0)
+			logger.WithError(err).Warning("ws read error")
+			time.Sleep(time.Second * 5)
 			continue
 		}
+		ConnectionStatus.With(prometheus.Labels{
+			"outpost_name": ac.Outpost.Name,
+			"outpost_type": ac.Server.Type(),
+			"uuid":         ac.instanceUUID.String(),
+		}).Set(1)
 		if wsMsg.Instruction == WebsocketInstructionTriggerUpdate {
 			time.Sleep(ac.reloadOffset)
 			logger.Debug("Got update trigger...")
-			err := ac.Server.Refresh()
+			err := ac.OnRefresh()
 			if err != nil {
 				logger.WithError(err).Debug("Failed to update")
+			} else {
+				LastUpdate.With(prometheus.Labels{
+					"outpost_name": ac.Outpost.Name,
+					"outpost_type": ac.Server.Type(),
+					"uuid":         ac.instanceUUID.String(),
+					"version":      constants.VERSION,
+					"build":        constants.BUILD(),
+				}).SetToCurrentTime()
 			}
 		}
 	}
@@ -109,20 +140,34 @@ func (ac *APIController) startWSHealth() {
 		err := ac.wsConn.WriteJSON(aliveMsg)
 		ac.logger.WithField("loop", "ws-health").Trace("hello'd")
 		if err != nil {
-			ac.logger.WithField("loop", "ws-health").WithError(err).Warning("ws write error, reconnecting")
-			ac.wsConn.CloseAndReconnect()
+			ac.logger.WithField("loop", "ws-health").WithError(err).Warning("ws write error")
+			time.Sleep(time.Second * 5)
 			continue
+		} else {
+			ConnectionStatus.With(prometheus.Labels{
+				"outpost_name": ac.Outpost.Name,
+				"outpost_type": ac.Server.Type(),
+				"uuid":         ac.instanceUUID.String(),
+			}).Set(1)
 		}
 	}
 }
 
 func (ac *APIController) startIntervalUpdater() {
 	logger := ac.logger.WithField("loop", "interval-updater")
-	ticker := time.NewTicker(time.Second * 150)
+	ticker := time.NewTicker(5 * time.Minute)
 	for ; true; <-ticker.C {
-		err := ac.Server.Refresh()
+		err := ac.OnRefresh()
 		if err != nil {
 			logger.WithError(err).Debug("Failed to update")
+		} else {
+			LastUpdate.With(prometheus.Labels{
+				"outpost_name": ac.Outpost.Name,
+				"outpost_type": ac.Server.Type(),
+				"uuid":         ac.instanceUUID.String(),
+				"version":      constants.VERSION,
+				"build":        constants.BUILD(),
+			}).SetToCurrentTime()
 		}
 	}
 }

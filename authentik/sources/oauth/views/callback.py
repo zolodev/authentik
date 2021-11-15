@@ -24,7 +24,7 @@ class OAuthCallback(OAuthClientMixin, View):
     source: OAuthSource
 
     # pylint: disable=too-many-return-statements
-    def get(self, request: HttpRequest, *_, **kwargs) -> HttpResponse:
+    def dispatch(self, request: HttpRequest, *_, **kwargs) -> HttpResponse:
         """View Get handler"""
         slug = kwargs.get("source_slug", "")
         try:
@@ -34,9 +34,7 @@ class OAuthCallback(OAuthClientMixin, View):
 
         if not self.source.enabled:
             raise Http404(f"Source {slug} is not enabled.")
-        client = self.get_client(
-            self.source, callback=self.get_callback_url(self.source)
-        )
+        client = self.get_client(self.source, callback=self.get_callback_url(self.source))
         # Fetch access token
         token = client.get_access_token()
         if token is None:

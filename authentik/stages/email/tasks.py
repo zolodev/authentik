@@ -45,9 +45,7 @@ def get_email_body(email: EmailMultiAlternatives) -> str:
     retry_backoff=True,
     base=MonitoredTask,
 )
-def send_mail(
-    self: MonitoredTask, message: dict[Any, Any], email_stage_pk: Optional[int] = None
-):
+def send_mail(self: MonitoredTask, message: dict[Any, Any], email_stage_pk: Optional[int] = None):
     """Send Email for Email Stage. Retries are scheduled automatically."""
     self.save_on_success = False
     message_id = make_msgid(domain=DNS_NAME)
@@ -56,7 +54,16 @@ def send_mail(
         if not email_stage_pk:
             stage: EmailStage = EmailStage(use_global_settings=True)
         else:
-            stage: EmailStage = EmailStage.objects.get(pk=email_stage_pk)
+            stages = EmailStage.objects.filter(pk=email_stage_pk)
+            if not stages.exists():
+                self.set_status(
+                    TaskResult(
+                        TaskResultStatus.WARNING,
+                        messages=["Email stage does not exist anymore. Discarding message."],
+                    )
+                )
+                return
+            stage: EmailStage = stages.first()
         try:
             backend = stage.backend
         except ValueError as exc:
@@ -91,7 +98,7 @@ def send_mail(
                 messages=["Successfully sent Mail."],
             )
         )
-    except (SMTPException, ConnectionError) as exc:
+    except (SMTPException, ConnectionError, OSError) as exc:
         LOGGER.debug("Error sending email, retrying...", exc=exc)
         self.set_status(TaskResult(TaskResultStatus.ERROR).with_error(exc))
         raise exc

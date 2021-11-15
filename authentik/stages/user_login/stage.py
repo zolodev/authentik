@@ -5,10 +5,11 @@ from django.http import HttpRequest, HttpResponse
 from django.utils.translation import gettext as _
 from structlog.stdlib import get_logger
 
+from authentik.core.models import User
 from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
 from authentik.flows.stage import StageView
 from authentik.lib.utils.time import timedelta_from_string
-from authentik.stages.password import BACKEND_DJANGO
+from authentik.stages.password import BACKEND_INBUILT
 from authentik.stages.password.stage import PLAN_CONTEXT_AUTHENTICATION_BACKEND
 
 LOGGER = get_logger()
@@ -18,6 +19,10 @@ USER_LOGIN_AUTHENTICATED = "user_login_authenticated"
 class UserLoginStageView(StageView):
     """Finalise Authentication flow by logging the user in"""
 
+    def post(self, request: HttpRequest) -> HttpResponse:
+        """Wrapper for post requests"""
+        return self.get(request)
+
     def get(self, request: HttpRequest) -> HttpResponse:
         """Attach the currently pending user to the current session"""
         if PLAN_CONTEXT_PENDING_USER not in self.executor.plan.context:
@@ -26,11 +31,14 @@ class UserLoginStageView(StageView):
             LOGGER.debug(message)
             return self.executor.stage_invalid()
         backend = self.executor.plan.context.get(
-            PLAN_CONTEXT_AUTHENTICATION_BACKEND, BACKEND_DJANGO
+            PLAN_CONTEXT_AUTHENTICATION_BACKEND, BACKEND_INBUILT
         )
+        user: User = self.executor.plan.context[PLAN_CONTEXT_PENDING_USER]
+        if not user.is_active:
+            LOGGER.warning("User is not active, login will not work.")
         login(
             self.request,
-            self.executor.plan.context[PLAN_CONTEXT_PENDING_USER],
+            user,
             backend=backend,
         )
         delta = timedelta_from_string(self.executor.current_stage.session_duration)
@@ -40,7 +48,8 @@ class UserLoginStageView(StageView):
             self.request.session.set_expiry(delta)
         LOGGER.debug(
             "Logged in",
-            user=self.executor.plan.context[PLAN_CONTEXT_PENDING_USER],
+            backend=backend,
+            user=user,
             flow_slug=self.executor.flow.slug,
             session_duration=self.executor.current_stage.session_duration,
         )

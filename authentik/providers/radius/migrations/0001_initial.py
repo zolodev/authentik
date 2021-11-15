@@ -3,7 +3,7 @@
 import django.db.models.deletion
 from django.db import migrations, models
 
-import authentik.providers.oauth2.generators
+import authentik.lib.generators
 
 
 class Migration(migrations.Migration):
@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
                 (
                     "shared_secret",
                     models.TextField(
-                        default=authentik.providers.oauth2.generators.generate_client_secret,
+                        default=authentik.lib.generators.generate_key,
                         help_text="Shared secret between clients and server to hash packets.",
                     ),
                 ),

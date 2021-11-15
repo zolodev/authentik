@@ -25,12 +25,12 @@ class DockerInlineTLS:
     def write_file(self, name: str, contents: str) -> str:
         """Wrapper for mkstemp that uses fdopen"""
         path = Path(gettempdir(), name)
-        with open(path, "w") as _file:
+        with open(path, "w", encoding="utf8") as _file:
             _file.write(contents)
         return str(path)
 
     def write(self) -> TLSConfig:
-        """Create TLSConfig with Certificate Keypairs"""
+        """Create TLSConfig with Certificate Key pairs"""
         # So yes, this is quite ugly. But sadly, there is no clean way to pass
         # docker-py (which is using requests (which is using urllib3)) a certificate
         # for verification or authentication as string.

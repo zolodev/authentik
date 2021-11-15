@@ -1,19 +1,21 @@
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { until } from "lit-html/directives/until";
-import { AggregateCard } from "./AggregateCard";
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+import { until } from "lit/directives/until.js";
+
 import "../Spinner";
 import { PFSize } from "../Spinner";
+import { AggregateCard } from "./AggregateCard";
 
 @customElement("ak-aggregate-card-promise")
 export class AggregatePromiseCard extends AggregateCard {
-    @property({attribute: false})
+    @property({ attribute: false })
     promise?: Promise<Record<string, unknown>>;
 
     promiseProxy(): Promise<TemplateResult> {
         if (!this.promise) {
             return new Promise<TemplateResult>(() => html``);
         }
-        return this.promise.then(s => {
+        return this.promise.then((s) => {
             return html`<i class="fa fa-check-circle"></i>&nbsp;${s.toString()}`;
         });
     }
@@ -23,5 +25,4 @@ export class AggregatePromiseCard extends AggregateCard {
             ${until(this.promiseProxy(), html`<ak-spinner size="${PFSize.Large}"></ak-spinner>`)}
         </p>`;
     }
-
 }

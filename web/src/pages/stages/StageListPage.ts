@@ -1,21 +1,25 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
+
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+import { until } from "lit/directives/until.js";
+
+import { Stage, StagesApi } from "@goauthentik/api";
+
 import { AKResponse } from "../../api/Client";
+import { DEFAULT_CONFIG } from "../../api/Config";
+import { uiConfig } from "../../common/config";
+import "../../elements/buttons/Dropdown";
+import "../../elements/buttons/SpinnerButton";
+import "../../elements/forms/DeleteBulkForm";
+import "../../elements/forms/ModalForm";
+import "../../elements/forms/ProxyForm";
 import { TableColumn } from "../../elements/table/Table";
 import { TablePage } from "../../elements/table/TablePage";
-
-import "../../elements/buttons/SpinnerButton";
-import "../../elements/buttons/Dropdown";
-import "../../elements/forms/DeleteForm";
-import "../../elements/forms/ProxyForm";
-import "../../elements/forms/ModalForm";
-import { until } from "lit-html/directives/until";
-import { PAGE_SIZE } from "../../constants";
-import { Stage, StagesApi } from "authentik-api";
-import { DEFAULT_CONFIG } from "../../api/Config";
-import { ifDefined } from "lit-html/directives/if-defined";
-
+import { groupBy } from "../../utils";
 import "./authenticator_duo/AuthenticatorDuoStageForm.ts";
+import "./authenticator_sms/AuthenticatorSMSStageForm.ts";
 import "./authenticator_static/AuthenticatorStaticStageForm.ts";
 import "./authenticator_totp/AuthenticatorTOTPStageForm.ts";
 import "./authenticator_validate/AuthenticatorValidateStageForm.ts";
@@ -49,24 +53,52 @@ export class StageListPage extends TablePage<Stage> {
         return true;
     }
 
+    checkbox = true;
+
     @property()
     order = "name";
 
-    apiEndpoint(page: number): Promise<AKResponse<Stage>> {
+    async apiEndpoint(page: number): Promise<AKResponse<Stage>> {
         return new StagesApi(DEFAULT_CONFIG).stagesAllList({
             ordering: this.order,
             page: page,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             search: this.search || "",
         });
+    }
+
+    groupBy(items: Stage[]): [string, Stage[]][] {
+        return groupBy(items, (stage) => stage.verboseNamePlural);
     }
 
     columns(): TableColumn[] {
         return [
             new TableColumn(t`Name`, "name"),
             new TableColumn(t`Flows`),
-            new TableColumn(""),
+            new TableColumn(t`Actions`),
         ];
+    }
+
+    renderToolbarSelected(): TemplateResult {
+        const disabled = this.selectedElements.length < 1;
+        return html`<ak-forms-delete-bulk
+            objectLabel=${t`Stage(s)`}
+            .objects=${this.selectedElements}
+            .usedBy=${(item: Stage) => {
+                return new StagesApi(DEFAULT_CONFIG).stagesAllUsedByList({
+                    stageUuid: item.pk,
+                });
+            }}
+            .delete=${(item: Stage) => {
+                return new StagesApi(DEFAULT_CONFIG).stagesAllDestroy({
+                    stageUuid: item.pk,
+                });
+            }}
+        >
+            <button ?disabled=${disabled} slot="trigger" class="pf-c-button pf-m-danger">
+                ${t`Delete`}
+            </button>
+        </ak-forms-delete-bulk>`;
     }
 
     row(item: Stage): TemplateResult[] {
@@ -80,78 +112,52 @@ export class StageListPage extends TablePage<Stage> {
                     <code>${flow.slug}</code>
                 </a>`;
             })}`,
-            html`
-            <ak-forms-modal>
-                <span slot="submit">
-                    ${t`Update`}
-                </span>
-                <span slot="header">
-                    ${t`Update ${item.verboseName}`}
-                </span>
+            html` <ak-forms-modal>
+                <span slot="submit"> ${t`Update`} </span>
+                <span slot="header"> ${t`Update ${item.verboseName}`} </span>
                 <ak-proxy-form
                     slot="form"
                     .args=${{
-                        "instancePk": item.pk
+                        instancePk: item.pk,
                     }}
-                    type=${ifDefined(item.component)}>
+                    type=${ifDefined(item.component)}
+                >
                 </ak-proxy-form>
-                <button slot="trigger" class="pf-c-button pf-m-secondary">
-                    ${t`Edit`}
+                <button slot="trigger" class="pf-c-button pf-m-plain">
+                    <i class="fas fa-edit"></i>
                 </button>
-            </ak-forms-modal>
-            <ak-forms-delete
-                .obj=${item}
-                objectLabel=${item.verboseName || ""}
-                .usedBy=${() => {
-                    return new StagesApi(DEFAULT_CONFIG).stagesAllUsedByList({
-                        stageUuid: item.pk
-                    });
-                }}
-                .delete=${() => {
-                    return new StagesApi(DEFAULT_CONFIG).stagesAllDestroy({
-                        stageUuid: item.pk
-                    });
-                }}>
-                <button slot="trigger" class="pf-c-button pf-m-danger">
-                    ${t`Delete`}
-                </button>
-            </ak-forms-delete>`,
+            </ak-forms-modal>`,
         ];
     }
 
     renderToolbar(): TemplateResult {
-        return html`
-        <ak-dropdown class="pf-c-dropdown">
-            <button class="pf-m-primary pf-c-dropdown__toggle" type="button">
-                <span class="pf-c-dropdown__toggle-text">${t`Create`}</span>
-                <i class="fas fa-caret-down pf-c-dropdown__toggle-icon" aria-hidden="true"></i>
-            </button>
-            <ul class="pf-c-dropdown__menu" hidden>
-                ${until(new StagesApi(DEFAULT_CONFIG).stagesAllTypesList().then((types) => {
-                    return types.map((type) => {
-                        return html`<li>
-                            <ak-forms-modal>
-                                <span slot="submit">
-                                    ${t`Create`}
-                                </span>
-                                <span slot="header">
-                                    ${t`Create ${type.name}`}
-                                </span>
-                                <ak-proxy-form
-                                    slot="form"
-                                    type=${type.component}>
-                                </ak-proxy-form>
-                                <button slot="trigger" class="pf-c-dropdown__menu-item">
-                                    ${type.name}<br>
-                                    <small>${type.description}</small>
-                                </button>
-                            </ak-forms-modal>
-                        </li>`;
-                    });
-                }), html`<ak-spinner></ak-spinner>`)}
-            </ul>
-        </ak-dropdown>
-        ${super.renderToolbar()}`;
+        return html` <ak-dropdown class="pf-c-dropdown">
+                <button class="pf-m-primary pf-c-dropdown__toggle" type="button">
+                    <span class="pf-c-dropdown__toggle-text">${t`Create`}</span>
+                    <i class="fas fa-caret-down pf-c-dropdown__toggle-icon" aria-hidden="true"></i>
+                </button>
+                <ul class="pf-c-dropdown__menu" hidden>
+                    ${until(
+                        new StagesApi(DEFAULT_CONFIG).stagesAllTypesList().then((types) => {
+                            return types.map((type) => {
+                                return html`<li>
+                                    <ak-forms-modal>
+                                        <span slot="submit"> ${t`Create`} </span>
+                                        <span slot="header"> ${t`Create ${type.name}`} </span>
+                                        <ak-proxy-form slot="form" type=${type.component}>
+                                        </ak-proxy-form>
+                                        <button slot="trigger" class="pf-c-dropdown__menu-item">
+                                            ${type.name}<br />
+                                            <small>${type.description}</small>
+                                        </button>
+                                    </ak-forms-modal>
+                                </li>`;
+                            });
+                        }),
+                        html`<ak-spinner></ak-spinner>`,
+                    )}
+                </ul>
+            </ak-dropdown>
+            ${super.renderToolbar()}`;
     }
-
 }

@@ -4,11 +4,9 @@ from typing import TYPE_CHECKING
 from kubernetes.client import CoreV1Api, V1Service, V1ServicePort, V1ServiceSpec
 
 from authentik.outposts.controllers.base import FIELD_MANAGER
-from authentik.outposts.controllers.k8s.base import (
-    KubernetesObjectReconciler,
-    NeedsUpdate,
-)
+from authentik.outposts.controllers.k8s.base import KubernetesObjectReconciler
 from authentik.outposts.controllers.k8s.deployment import DeploymentReconciler
+from authentik.outposts.controllers.k8s.utils import compare_ports
 
 if TYPE_CHECKING:
     from authentik.outposts.controllers.kubernetes import KubernetesController
@@ -22,12 +20,12 @@ class ServiceReconciler(KubernetesObjectReconciler[V1Service]):
         self.api = CoreV1Api(controller.client)
 
     def reconcile(self, current: V1Service, reference: V1Service):
+        compare_ports(current.spec.ports, reference.spec.ports)
+        # run the base reconcile last, as that will probably raise NeedsUpdate
+        # after an authentik update. However the ports might have also changed during
+        # the update, so this causes the service to be re-created with higher
+        # priority than being updated.
         super().reconcile(current, reference)
-        if len(current.spec.ports) != len(reference.spec.ports):
-            raise NeedsUpdate()
-        for port in reference.spec.ports:
-            if port not in current.spec.ports:
-                raise NeedsUpdate()
 
     def get_reference_object(self) -> V1Service:
         """Get deployment object for outpost"""
@@ -42,7 +40,13 @@ class ServiceReconciler(KubernetesObjectReconciler[V1Service]):
                     target_port=port.inner_port or port.port,
                 )
             )
-        selector_labels = DeploymentReconciler(self.controller).get_pod_meta()
+        if self.is_embedded:
+            selector_labels = {
+                "app.kubernetes.io/name": "authentik",
+                "app.kubernetes.io/component": "server",
+            }
+        else:
+            selector_labels = DeploymentReconciler(self.controller).get_pod_meta()
         return V1Service(
             metadata=meta,
             spec=V1ServiceSpec(
@@ -58,9 +62,7 @@ class ServiceReconciler(KubernetesObjectReconciler[V1Service]):
         )
 
     def delete(self, reference: V1Service):
-        return self.api.delete_namespaced_service(
-            reference.metadata.name, self.namespace
-        )
+        return self.api.delete_namespaced_service(reference.metadata.name, self.namespace)
 
     def retrieve(self) -> V1Service:
         return self.api.read_namespaced_service(self.name, self.namespace)

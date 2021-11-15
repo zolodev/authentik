@@ -1,4 +1,5 @@
 """authentik administration overview"""
+from django.conf import settings
 from drf_spectacular.utils import extend_schema, inline_serializer
 from prometheus_client import Gauge
 from rest_framework.fields import IntegerField
@@ -17,10 +18,11 @@ class WorkerView(APIView):
 
     permission_classes = [IsAdminUser]
 
-    @extend_schema(
-        responses=inline_serializer("Workers", fields={"count": IntegerField()})
-    )
+    @extend_schema(responses=inline_serializer("Workers", fields={"count": IntegerField()}))
     def get(self, request: Request) -> Response:
         """Get currently connected worker count."""
         count = len(CELERY_APP.control.ping(timeout=0.5))
+        # In debug we run with `CELERY_TASK_ALWAYS_EAGER`, so tasks are ran on the main process
+        if settings.DEBUG:
+            count += 1
         return Response({"count": count})

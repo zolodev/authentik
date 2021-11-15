@@ -22,15 +22,12 @@ from authentik.flows.planner import (
     FlowPlanner,
 )
 from authentik.flows.stage import ChallengeStageView
-from authentik.flows.views import NEXT_ARG_NAME, SESSION_KEY_GET, SESSION_KEY_PLAN
+from authentik.flows.views.executor import NEXT_ARG_NAME, SESSION_KEY_GET, SESSION_KEY_PLAN
 from authentik.lib.utils.urls import redirect_with_qs
 from authentik.lib.views import bad_request_message
 from authentik.providers.saml.utils.encoding import nice64
 from authentik.providers.saml.views.flows import AutosubmitChallenge
-from authentik.sources.saml.exceptions import (
-    MissingSAMLResponse,
-    UnsupportedNameIDFormat,
-)
+from authentik.sources.saml.exceptions import MissingSAMLResponse, UnsupportedNameIDFormat
 from authentik.sources.saml.models import SAMLBindingTypes, SAMLSource
 from authentik.sources.saml.processors.metadata import MetadataProcessor
 from authentik.sources.saml.processors.request import RequestProcessor
@@ -69,14 +66,12 @@ class AutosubmitStageView(ChallengeStageView):
 class InitiateView(View):
     """Get the Form with SAML Request, which sends us to the IDP"""
 
-    def handle_login_flow(
-        self, source: SAMLSource, *stages_to_append, **kwargs
-    ) -> HttpResponse:
+    def handle_login_flow(self, source: SAMLSource, *stages_to_append, **kwargs) -> HttpResponse:
         """Prepare Authentication Plan, redirect user FlowExecutor"""
         # Ensure redirect is carried through when user was trying to
         # authorize application
         final_redirect = self.request.session.get(SESSION_KEY_GET, {}).get(
-            NEXT_ARG_NAME, "authentik_core:if-admin"
+            NEXT_ARG_NAME, "authentik_core:if-user"
         )
         kwargs.update(
             {

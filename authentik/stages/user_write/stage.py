@@ -1,7 +1,8 @@
 """Write stage logic"""
+from typing import Any
+
 from django.contrib import messages
 from django.contrib.auth import update_session_auth_hash
-from django.contrib.auth.backends import ModelBackend
 from django.db import transaction
 from django.db.utils import IntegrityError
 from django.http import HttpRequest, HttpResponse
@@ -13,7 +14,7 @@ from authentik.core.models import USER_ATTRIBUTE_SOURCES, User, UserSourceConnec
 from authentik.core.sources.stage import PLAN_CONTEXT_SOURCES_CONNECTION
 from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
 from authentik.flows.stage import StageView
-from authentik.lib.utils.reflection import class_to_path
+from authentik.stages.password import BACKEND_INBUILT
 from authentik.stages.password.stage import PLAN_CONTEXT_AUTHENTICATION_BACKEND
 from authentik.stages.prompt.stage import PLAN_CONTEXT_PROMPT
 from authentik.stages.user_write.signals import user_write
@@ -23,6 +24,23 @@ LOGGER = get_logger()
 
 class UserWriteStageView(StageView):
     """Finalise Enrollment flow by creating a user object."""
+
+    def write_attribute(self, user: User, key: str, value: Any):
+        """Allow use of attributes.foo.bar when writing to a user, with full
+        recursion"""
+        parts = key.replace("_", ".").split(".")
+        if len(parts) < 1:
+            return
+        # Function will always be called with a key like attribute.
+        # this is just a sanity check to ensure that is removed
+        if parts[0] == "attribute":
+            parts = parts[1:]
+        attrs = user.attributes
+        for comp in parts[:-1]:
+            if comp not in attrs:
+                attrs[comp] = {}
+            attrs = attrs.get(comp)
+        attrs[parts[-1]] = value
 
     def post(self, request: HttpRequest) -> HttpResponse:
         """Wrapper for post requests"""
@@ -42,9 +60,7 @@ class UserWriteStageView(StageView):
             self.executor.plan.context[PLAN_CONTEXT_PENDING_USER] = User(
                 is_active=not self.executor.current_stage.create_users_as_inactive
             )
-            self.executor.plan.context[
-                PLAN_CONTEXT_AUTHENTICATION_BACKEND
-            ] = class_to_path(ModelBackend)
+            self.executor.plan.context[PLAN_CONTEXT_AUTHENTICATION_BACKEND] = BACKEND_INBUILT
             LOGGER.debug(
                 "Created new user",
                 flow_slug=self.executor.flow.slug,
@@ -74,10 +90,10 @@ class UserWriteStageView(StageView):
             # Otherwise we just save it as custom attribute, but only if the value is prefixed with
             # `attribute_`, to prevent accidentally saving values
             else:
-                if not key.startswith("attribute_"):
+                if not key.startswith("attribute.") and not key.startswith("attribute_"):
                     LOGGER.debug("discarding key", key=key)
                     continue
-                user.attributes[key.replace("attribute_", "", 1)] = value
+                self.write_attribute(user, key, value)
         # Extra check to prevent flows from saving a user with a blank username
         if user.username == "":
             LOGGER.warning("Aborting write to empty username", user=user)
@@ -95,12 +111,12 @@ class UserWriteStageView(StageView):
         try:
             with transaction.atomic():
                 user.save()
+                if self.executor.current_stage.create_users_group:
+                    user.ak_groups.add(self.executor.current_stage.create_users_group)
         except IntegrityError as exc:
             LOGGER.warning("Failed to save user", exc=exc)
             return self.executor.stage_invalid()
-        user_write.send(
-            sender=self, request=request, user=user, data=data, created=user_created
-        )
+        user_write.send(sender=self, request=request, user=user, data=data, created=user_created)
         # Check if the password has been updated, and update the session auth hash
         if should_update_seesion:
             update_session_auth_hash(self.request, user)

@@ -7,10 +7,7 @@ from structlog.stdlib import get_logger
 
 from authentik.lib.config import CONFIG
 from authentik.lib.utils.http import get_client_ip
-from authentik.policies.reputation.models import (
-    CACHE_KEY_IP_PREFIX,
-    CACHE_KEY_USER_PREFIX,
-)
+from authentik.policies.reputation.models import CACHE_KEY_IP_PREFIX, CACHE_KEY_USER_PREFIX
 from authentik.stages.identification.signals import identification_failed
 
 LOGGER = get_logger()
@@ -37,7 +34,7 @@ def update_score(request: HttpRequest, username: str, amount: int):
 @receiver(user_login_failed)
 # pylint: disable=unused-argument
 def handle_failed_login(sender, request, credentials, **_):
-    """Lower Score for failed loging attempts"""
+    """Lower Score for failed login attempts"""
     if "username" in credentials:
         update_score(request, credentials.get("username"), -1)
 

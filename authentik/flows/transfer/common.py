@@ -11,7 +11,7 @@ from authentik.lib.sentry import SentryIgnoredException
 
 
 def get_attrs(obj: SerializerModel) -> dict[str, Any]:
-    """Get object's attributes via their serializer, and covert it to a normal dict"""
+    """Get object's attributes via their serializer, and convert it to a normal dict"""
     data = dict(obj.serializer(obj).data)
     to_remove = (
         "policies",
@@ -25,6 +25,8 @@ def get_attrs(obj: SerializerModel) -> dict[str, Any]:
         "component",
         "flow_set",
         "promptstage_set",
+        "policybindingmodel_ptr_id",
+        "export_url",
     )
     for to_remove_name in to_remove:
         if to_remove_name in data:
@@ -44,9 +46,7 @@ class FlowBundleEntry:
     attrs: dict[str, Any]
 
     @staticmethod
-    def from_model(
-        model: SerializerModel, *extra_identifier_names: str
-    ) -> "FlowBundleEntry":
+    def from_model(model: SerializerModel, *extra_identifier_names: str) -> "FlowBundleEntry":
         """Convert a SerializerModel instance to a Bundle Entry"""
         identifiers = {
             "pk": model.pk,

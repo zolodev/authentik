@@ -43,6 +43,7 @@ class EmailStageSerializer(StageSerializer):
             "token_expiry",
             "subject",
             "template",
+            "activate_user_on_success",
         ]
         extra_kwargs = {"password": {"write_only": True}}
 
@@ -52,6 +53,22 @@ class EmailStageViewSet(UsedByMixin, ModelViewSet):
 
     queryset = EmailStage.objects.all()
     serializer_class = EmailStageSerializer
+    filterset_fields = [
+        "name",
+        "use_global_settings",
+        "host",
+        "port",
+        "username",
+        "use_tls",
+        "use_ssl",
+        "timeout",
+        "from_address",
+        "token_expiry",
+        "subject",
+        "template",
+        "activate_user_on_success",
+    ]
+    ordering = ["name"]
 
     @extend_schema(responses={200: TypeCreateSerializer(many=True)})
     @action(detail=False, pagination_class=None, filter_backends=[])

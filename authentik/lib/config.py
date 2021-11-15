@@ -3,7 +3,8 @@ import os
 from collections.abc import Mapping
 from contextlib import contextmanager
 from glob import glob
-from json import dumps
+from json import dumps, loads
+from json.decoder import JSONDecodeError
 from time import time
 from typing import Any
 from urllib.parse import urlparse
@@ -79,7 +80,7 @@ class ConfigLoader:
             value = os.getenv(url.netloc, url.query)
         if url.scheme == "file":
             try:
-                with open(url.path, "r") as _file:
+                with open(url.path, "r", encoding="utf8") as _file:
                     value = _file.read()
             except OSError:
                 self._log("error", f"Failed to read config value from {url.path}")
@@ -89,7 +90,7 @@ class ConfigLoader:
     def update_from_file(self, path: str):
         """Update config from file contents"""
         try:
-            with open(path) as file:
+            with open(path, encoding="utf8") as file:
                 try:
                     self.update(self.__config, yaml.safe_load(file))
                     self._log("debug", "Loaded config", file=path)
@@ -115,9 +116,7 @@ class ConfigLoader:
         for key, value in os.environ.items():
             if not key.startswith(ENV_PREFIX):
                 continue
-            relative_key = (
-                key.replace(f"{ENV_PREFIX}_", "", 1).replace("__", ".").lower()
-            )
+            relative_key = key.replace(f"{ENV_PREFIX}_", "", 1).replace("__", ".").lower()
             # Recursively convert path from a.b.c into outer[a][b][c]
             current_obj = outer
             dot_parts = relative_key.split(".")
@@ -125,6 +124,11 @@ class ConfigLoader:
                 if dot_part not in current_obj:
                     current_obj[dot_part] = {}
                 current_obj = current_obj[dot_part]
+            # Check if the value is json, and try to load it
+            try:
+                value = loads(value)
+            except JSONDecodeError:
+                pass
             current_obj[dot_parts[-1]] = value
             idx += 1
         if idx > 0:

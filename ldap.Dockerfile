@@ -1,35 +1,22 @@
-# Stage 1: Generate API Client
-FROM openapitools/openapi-generator-cli as api-builder
-
-COPY ./schema.yml /local/schema.yml
-
-RUN	docker-entrypoint.sh generate \
-    --git-host goauthentik.io \
-    --git-repo-id outpost \
-    --git-user-id api \
-    -i /local/schema.yml \
-    -g go \
-    -o /local/api \
-    --additional-properties=packageName=api,enumClassPrefix=true,useOneOfDiscriminatorLookup=true && \
-    rm -f /local/api/go.mod /local/api/go.sum
-
-# Stage 2: Build
-FROM golang:1.16.6 AS builder
-ARG GIT_BUILD_HASH
-ENV GIT_BUILD_HASH=$GIT_BUILD_HASH
+# Stage 1: Build
+FROM docker.io/golang:1.17.3-bullseye AS builder
 
 WORKDIR /go/src/goauthentik.io
 
 COPY . .
-COPY --from=api-builder /local/api api
-
+ENV CGO_ENABLED=0
 RUN go build -o /go/ldap ./cmd/ldap
 
-# Stage 3: Run
-FROM gcr.io/distroless/base-debian10:debug
+# Stage 2: Run
+FROM gcr.io/distroless/static-debian11:debug
+
+ARG GIT_BUILD_HASH
+ENV GIT_BUILD_HASH=$GIT_BUILD_HASH
 
 COPY --from=builder /go/ldap /
 
-HEALTHCHECK CMD [ "wget", "--spider", "http://localhost:4180/akprox/ping" ]
+HEALTHCHECK CMD [ "wget", "--spider", "http://localhost:9300/akprox/ping" ]
+
+EXPOSE 3389 6636 9300
 
 ENTRYPOINT ["/ldap"]

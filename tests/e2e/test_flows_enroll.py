@@ -38,7 +38,7 @@ class TestFlowsEnroll(SeleniumTestCase):
         }
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     def test_enroll_2_step(self):
@@ -96,11 +96,11 @@ class TestFlowsEnroll(SeleniumTestCase):
 
         self.initial_stages()
 
-        interface_admin = self.get_shadow_root("ak-interface-admin")
-        wait = WebDriverWait(interface_admin, self.wait_timeout)
+        interface_user = self.get_shadow_root("ak-interface-user")
+        wait = WebDriverWait(interface_user, self.wait_timeout)
 
-        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "ak-sidebar")))
-        self.driver.get(self.if_admin_url("/user"))
+        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, ".pf-c-page__header")))
+        self.driver.get(self.if_user_url("/settings"))
 
         user = User.objects.get(username="foo")
         self.assertEqual(user.username, "foo")
@@ -108,7 +108,7 @@ class TestFlowsEnroll(SeleniumTestCase):
         self.assertEqual(user.email, "foo@bar.baz")
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend")
@@ -186,9 +186,7 @@ class TestFlowsEnroll(SeleniumTestCase):
         self.driver.get("http://localhost:8025")
 
         # Click on first message
-        self.wait.until(
-            ec.presence_of_element_located((By.CLASS_NAME, "msglist-message"))
-        )
+        self.wait.until(ec.presence_of_element_located((By.CLASS_NAME, "msglist-message")))
         self.driver.find_element(By.CLASS_NAME, "msglist-message").click()
         self.driver.switch_to.frame(self.driver.find_element(By.CLASS_NAME, "tab-pane"))
         self.driver.find_element(By.ID, "confirm").click()
@@ -197,12 +195,10 @@ class TestFlowsEnroll(SeleniumTestCase):
 
         sleep(2)
         # We're now logged in
-        wait = WebDriverWait(
-            self.get_shadow_root("ak-interface-admin"), self.wait_timeout
-        )
+        wait = WebDriverWait(self.get_shadow_root("ak-interface-user"), self.wait_timeout)
 
-        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "ak-sidebar")))
-        self.driver.get(self.if_admin_url("/user"))
+        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, ".pf-c-page__header")))
+        self.driver.get(self.if_user_url("/settings"))
 
         self.assert_user(User.objects.get(username="foo"))
 
@@ -210,9 +206,7 @@ class TestFlowsEnroll(SeleniumTestCase):
         """Fill out initial stages"""
         # Identification stage, click enroll
         flow_executor = self.get_shadow_root("ak-flow-executor")
-        identification_stage = self.get_shadow_root(
-            "ak-stage-identification", flow_executor
-        )
+        identification_stage = self.get_shadow_root("ak-stage-identification", flow_executor)
         wait = WebDriverWait(identification_stage, self.wait_timeout)
 
         wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "#enroll")))
@@ -223,18 +217,14 @@ class TestFlowsEnroll(SeleniumTestCase):
         prompt_stage = self.get_shadow_root("ak-stage-prompt", flow_executor)
         wait = WebDriverWait(prompt_stage, self.wait_timeout)
 
-        wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "input[name=username]"))
-        )
-        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=username]").send_keys(
-            "foo"
-        )
+        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "input[name=username]")))
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=username]").send_keys("foo")
         prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(
             USER().username
         )
-        prompt_stage.find_element(
-            By.CSS_SELECTOR, "input[name=password_repeat]"
-        ).send_keys(USER().username)
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password_repeat]").send_keys(
+            USER().username
+        )
         prompt_stage.find_element(By.CSS_SELECTOR, ".pf-c-button").click()
 
         # Second prompt stage
@@ -242,13 +232,7 @@ class TestFlowsEnroll(SeleniumTestCase):
         prompt_stage = self.get_shadow_root("ak-stage-prompt", flow_executor)
         wait = WebDriverWait(prompt_stage, self.wait_timeout)
 
-        wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "input[name=name]"))
-        )
-        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=name]").send_keys(
-            "some name"
-        )
-        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=email]").send_keys(
-            "foo@bar.baz"
-        )
+        wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "input[name=name]")))
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=name]").send_keys("some name")
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=email]").send_keys("foo@bar.baz")
         prompt_stage.find_element(By.CSS_SELECTOR, ".pf-c-button").click()

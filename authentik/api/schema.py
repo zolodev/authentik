@@ -11,7 +11,7 @@ from drf_spectacular.types import OpenApiTypes
 
 
 def build_standard_type(obj, **kwargs):
-    """Build a basic type with optional add ons."""
+    """Build a basic type with optional add owns."""
     schema = build_basic_type(obj)
     schema.update(kwargs)
     return schema
@@ -31,7 +31,7 @@ VALIDATION_ERROR = build_object_type(
         "non_field_errors": build_array_type(build_standard_type(OpenApiTypes.STR)),
         "code": build_standard_type(OpenApiTypes.STR),
     },
-    required=["detail"],
+    required=[],
     additionalProperties={},
 )
 
@@ -63,9 +63,7 @@ def postprocess_schema_responses(result, generator, **kwargs):  # noqa: W0613
             method["responses"].setdefault("400", validation_error.ref)
             method["responses"].setdefault("403", generic_error.ref)
 
-    result["components"] = generator.registry.build(
-        spectacular_settings.APPEND_COMPONENTS
-    )
+    result["components"] = generator.registry.build(spectacular_settings.APPEND_COMPONENTS)
 
     # This is a workaround for authentik/stages/prompt/stage.py
     # since the serializer PromptChallengeResponse

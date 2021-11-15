@@ -1,15 +1,17 @@
-import { css, CSSResult, customElement, LitElement, property } from "lit-element";
-import PFPage from "@patternfly/patternfly/components/Page/page.css";
-import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
+import { CSSResult, LitElement, css } from "lit";
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+import { until } from "lit/directives/until.js";
+
 import AKGlobal from "../../authentik.css";
-import { TemplateResult, html } from "lit-html";
-import { until } from "lit-html/directives/until";
+import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
+import PFPage from "@patternfly/patternfly/components/Page/page.css";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
+
 import { ROUTE_SEPARATOR } from "../../constants";
 
 @customElement("ak-sidebar-item")
 export class SidebarItem extends LitElement {
-
     static get styles(): CSSResult[] {
         return [
             PFBase,
@@ -25,7 +27,7 @@ export class SidebarItem extends LitElement {
                     background-color: var(--ak-accent);
                     margin: 16px;
                 }
-                :host([highlight]) .pf-c-nav__item .pf-c-nav__link  {
+                :host([highlight]) .pf-c-nav__item .pf-c-nav__link {
                     padding-left: 0.5rem;
                 }
                 .pf-c-nav__link.pf-m-current::after,
@@ -92,13 +94,13 @@ export class SidebarItem extends LitElement {
 
     get childItems(): SidebarItem[] {
         const children = Array.from(this.querySelectorAll<SidebarItem>("ak-sidebar-item") || []);
-        children.forEach(child => child.parent = this);
+        children.forEach((child) => (child.parent = this));
         return children;
     }
 
-    @property({attribute: false})
+    @property({ attribute: false })
     set activeWhen(regexp: string[]) {
-        regexp.forEach(r => {
+        regexp.forEach((r) => {
             this.activeMatchers.push(new RegExp(r));
         });
     }
@@ -110,7 +112,7 @@ export class SidebarItem extends LitElement {
 
     onHashChange(): void {
         const activePath = window.location.hash.slice(1, Infinity).split(ROUTE_SEPARATOR)[0];
-        this.childItems.forEach(item => {
+        this.childItems.forEach((item) => {
             this.expandParentRecursive(activePath, item);
         });
         this.isActive = this.matchesPath(activePath);
@@ -125,7 +127,7 @@ export class SidebarItem extends LitElement {
                 return true;
             }
         }
-        return this.activeMatchers.some(v => {
+        return this.activeMatchers.some((v) => {
             const match = v.exec(path);
             if (match !== null) {
                 return true;
@@ -138,7 +140,7 @@ export class SidebarItem extends LitElement {
             item.parent.expanded = true;
             this.requestUpdate();
         }
-        item.childItems.forEach(i => this.expandParentRecursive(activePath, i));
+        item.childItems.forEach((i) => this.expandParentRecursive(activePath, i));
     }
 
     render(): TemplateResult {
@@ -153,10 +155,16 @@ export class SidebarItem extends LitElement {
             }
         }
         if (this.childItems.length > 0) {
-            return html`<li class="pf-c-nav__item ${this.expanded ? "pf-m-expandable pf-m-expanded" : ""}">
-                <button class="pf-c-nav__link" aria-expanded="true" @click=${() => {
-                    this.expanded = !this.expanded;
-                }}>
+            return html`<li
+                class="pf-c-nav__item ${this.expanded ? "pf-m-expandable pf-m-expanded" : ""}"
+            >
+                <button
+                    class="pf-c-nav__link"
+                    aria-expanded="true"
+                    @click=${() => {
+                        this.expanded = !this.expanded;
+                    }}
+                >
                     <slot name="label"></slot>
                     <span class="pf-c-nav__toggle">
                         <span class="pf-c-nav__toggle-icon">
@@ -172,15 +180,20 @@ export class SidebarItem extends LitElement {
             </li>`;
         }
         return html`<li class="pf-c-nav__item">
-            ${this.path ? html`
-                <a href="${this.isAbsoluteLink ? "" : "#"}${this.path}" class="pf-c-nav__link ${this.isActive ? "pf-m-current" : ""}">
-                    <slot name="label"></slot>
-                </a>
-            ` : html`
-                <span class="pf-c-nav__link">
-                    <slot name="label"></slot>
-                </span>
-            `}
+            ${this.path
+                ? html`
+                      <a
+                          href="${this.isAbsoluteLink ? "" : "#"}${this.path}"
+                          class="pf-c-nav__link ${this.isActive ? "pf-m-current" : ""}"
+                      >
+                          <slot name="label"></slot>
+                      </a>
+                  `
+                : html`
+                      <span class="pf-c-nav__link">
+                          <slot name="label"></slot>
+                      </span>
+                  `}
         </li>`;
     }
 }

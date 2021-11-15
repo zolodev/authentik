@@ -8,7 +8,7 @@ from django.http import HttpRequest, HttpResponse
 from django.http.request import QueryDict
 from django.utils.translation import gettext_lazy as _
 from guardian.shortcuts import get_anonymous_user
-from rest_framework.fields import BooleanField, CharField, IntegerField
+from rest_framework.fields import BooleanField, CharField, ChoiceField, IntegerField
 from rest_framework.serializers import ValidationError
 from structlog.stdlib import get_logger
 
@@ -31,10 +31,11 @@ class StagePromptSerializer(PassiveSerializer):
 
     field_key = CharField()
     label = CharField(allow_blank=True)
-    type = CharField()
+    type = ChoiceField(choices=FieldTypes.choices)
     required = BooleanField()
     placeholder = CharField(allow_blank=True)
     order = IntegerField()
+    sub_text = CharField(allow_blank=True)
 
 
 class PromptChallenge(Challenge):
@@ -53,16 +54,19 @@ class PromptChallengeResponse(ChallengeResponse):
     def __init__(self, *args, **kwargs):
         stage: PromptStage = kwargs.pop("stage", None)
         plan: FlowPlan = kwargs.pop("plan", None)
+        request: HttpRequest = kwargs.pop("request", None)
         super().__init__(*args, **kwargs)
         self.stage = stage
         self.plan = plan
+        self.request = request
         if not self.stage:
             return
         # list() is called so we only load the fields once
         fields = list(self.stage.fields.all())
         for field in fields:
             field: Prompt
-            self.fields[field.field_key] = field.field
+            current = plan.context.get(PLAN_CONTEXT_PROMPT, {}).get(field.field_key)
+            self.fields[field.field_key] = field.field(current)
             # Special handling for fields with username type
             # these check for existing users with the same username
             if field.type == FieldTypes.USERNAME:
@@ -93,23 +97,21 @@ class PromptChallengeResponse(ChallengeResponse):
         # Check if we have any static or hidden fields, and ensure they
         # still have the same value
         static_hidden_fields: QuerySet[Prompt] = self.stage.fields.filter(
-            type__in=[FieldTypes.HIDDEN, FieldTypes.STATIC]
+            type__in=[FieldTypes.HIDDEN, FieldTypes.STATIC, FieldTypes.TEXT_READ_ONLY]
         )
         for static_hidden in static_hidden_fields:
-            attrs[static_hidden.field_key] = static_hidden.placeholder
+            field = self.fields[static_hidden.field_key]
+            attrs[static_hidden.field_key] = field.default
 
         # Check if we have two password fields, and make sure they are the same
-        password_fields: QuerySet[Prompt] = self.stage.fields.filter(
-            type=FieldTypes.PASSWORD
-        )
+        password_fields: QuerySet[Prompt] = self.stage.fields.filter(type=FieldTypes.PASSWORD)
         if password_fields.exists() and password_fields.count() == 2:
-            self._validate_password_fields(
-                *[field.field_key for field in password_fields]
-            )
+            self._validate_password_fields(*[field.field_key for field in password_fields])
 
         user = self.plan.context.get(PLAN_CONTEXT_PENDING_USER, get_anonymous_user())
-        engine = ListPolicyEngine(self.stage.validation_policies.all(), user)
-        engine.request.context = attrs
+        engine = ListPolicyEngine(self.stage.validation_policies.all(), user, self.request)
+        engine.request.context[PLAN_CONTEXT_PROMPT] = attrs
+        engine.request.context.update(attrs)
         engine.build()
         result = engine.result
         if not result.passing:
@@ -135,9 +137,7 @@ def password_single_validator_factory() -> Callable[[PromptChallenge, str], Any]
 
     def password_single_clean(self: PromptChallenge, value: str) -> Any:
         """Send password validation signals for e.g. LDAP Source"""
-        password_validate.send(
-            sender=self, password=value, plan_context=self.plan.context
-        )
+        password_validate.send(sender=self, password=value, plan_context=self.plan.context)
         return value
 
     return password_single_clean
@@ -146,9 +146,7 @@ def password_single_validator_factory() -> Callable[[PromptChallenge, str], Any]
 class ListPolicyEngine(PolicyEngine):
     """Slightly modified policy engine, which uses a list instead of a PolicyBindingModel"""
 
-    def __init__(
-        self, policies: list[Policy], user: User, request: HttpRequest = None
-    ) -> None:
+    def __init__(self, policies: list[Policy], user: User, request: HttpRequest = None) -> None:
         super().__init__(PolicyBindingModel(), user, request)
         self.__list = policies
         self.use_cache = False
@@ -167,10 +165,17 @@ class PromptStageView(ChallengeStageView):
 
     def get_challenge(self, *args, **kwargs) -> Challenge:
         fields = list(self.executor.current_stage.fields.all().order_by("order"))
+        serializers = []
+        context_prompt = self.executor.plan.context.get(PLAN_CONTEXT_PROMPT, {})
+        for field in fields:
+            data = StagePromptSerializer(field).data
+            if field.field_key in context_prompt:
+                data["placeholder"] = context_prompt.get(field.field_key)
+            serializers.append(data)
         challenge = PromptChallenge(
             data={
                 "type": ChallengeTypes.NATIVE.value,
-                "fields": [StagePromptSerializer(field).data for field in fields],
+                "fields": serializers,
             },
         )
         return challenge
@@ -181,6 +186,7 @@ class PromptStageView(ChallengeStageView):
         return PromptChallengeResponse(
             instance=None,
             data=data,
+            request=self.request,
             stage=self.executor.current_stage,
             plan=self.executor.plan,
         )

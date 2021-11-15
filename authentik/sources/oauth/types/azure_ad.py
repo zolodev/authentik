@@ -1,6 +1,5 @@
 """AzureAD OAuth2 Views"""
 from typing import Any, Optional
-from uuid import UUID
 
 from requests.exceptions import RequestException
 from structlog.stdlib import get_logger
@@ -8,8 +7,18 @@ from structlog.stdlib import get_logger
 from authentik.sources.oauth.clients.oauth2 import OAuth2Client
 from authentik.sources.oauth.types.manager import MANAGER, SourceType
 from authentik.sources.oauth.views.callback import OAuthCallback
+from authentik.sources.oauth.views.redirect import OAuthRedirect
 
 LOGGER = get_logger()
+
+
+class AzureADOAuthRedirect(OAuthRedirect):
+    """Azure AD OAuth2 Redirect"""
+
+    def get_additional_parameters(self, source):  # pragma: no cover
+        return {
+            "scope": "openid https://graph.microsoft.com/User.Read",
+        }
 
 
 class AzureADClient(OAuth2Client):
@@ -24,11 +33,8 @@ class AzureADClient(OAuth2Client):
             response = self.session.request(
                 "get",
                 profile_url,
-                headers={
-                    "Authorization": f"{token['token_type']} {token['access_token']}"
-                },
+                headers={"Authorization": f"{token['token_type']} {token['access_token']}"},
             )
-            LOGGER.debug(response.text)
             response.raise_for_status()
         except RequestException as exc:
             LOGGER.warning("Unable to fetch user profile", exc=exc)
@@ -41,12 +47,6 @@ class AzureADOAuthCallback(OAuthCallback):
     """AzureAD OAuth2 Callback"""
 
     client_class = AzureADClient
-
-    def get_user_id(self, info: dict[str, Any]) -> Optional[str]:
-        try:
-            return str(UUID(info.get("objectId")).int)
-        except TypeError:
-            return None
 
     def get_user_enroll_context(
         self,
@@ -65,11 +65,12 @@ class AzureADType(SourceType):
     """Azure AD Type definition"""
 
     callback_view = AzureADOAuthCallback
+    redirect_view = AzureADOAuthRedirect
     name = "Azure AD"
-    slug = "azure-ad"
+    slug = "azuread"
 
     urls_customizable = True
 
-    authorization_url = "https://login.microsoftonline.com/common/oauth2/authorize"
-    access_token_url = "https://login.microsoftonline.com/common/oauth2/token"  # nosec
-    profile_url = "https://graph.windows.net/myorganization/me?api-version=1.6"
+    authorization_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    access_token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"  # nosec
+    profile_url = "https://graph.microsoft.com/v1.0/me"

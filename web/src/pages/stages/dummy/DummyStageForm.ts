@@ -1,15 +1,17 @@
-import { DummyStage, StagesApi } from "authentik-api";
 import { t } from "@lingui/macro";
-import { customElement } from "lit-element";
-import { html, TemplateResult } from "lit-html";
+
+import { TemplateResult, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import { DummyStage, StagesApi } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../../api/Config";
-import { ifDefined } from "lit-html/directives/if-defined";
 import "../../../elements/forms/HorizontalFormElement";
 import { ModelForm } from "../../../elements/forms/ModelForm";
 
 @customElement("ak-stage-dummy-form")
 export class DummyStageForm extends ModelForm<DummyStage, string> {
-
     loadInstance(pk: string): Promise<DummyStage> {
         return new StagesApi(DEFAULT_CONFIG).stagesDummyRetrieve({
             stageUuid: pk,
@@ -28,11 +30,11 @@ export class DummyStageForm extends ModelForm<DummyStage, string> {
         if (this.instance) {
             return new StagesApi(DEFAULT_CONFIG).stagesDummyUpdate({
                 stageUuid: this.instance.pk || "",
-                dummyStageRequest: data
+                dummyStageRequest: data,
             });
         } else {
             return new StagesApi(DEFAULT_CONFIG).stagesDummyCreate({
-                dummyStageRequest: data
+                dummyStageRequest: data,
             });
         }
     };
@@ -42,13 +44,14 @@ export class DummyStageForm extends ModelForm<DummyStage, string> {
             <div class="form-help-text">
                 ${t`Dummy stage used for testing. Shows a simple continue button and always passes.`}
             </div>
-            <ak-form-element-horizontal
-                label=${t`Name`}
-                ?required=${true}
-                name="name">
-                <input type="text" value="${ifDefined(this.instance?.name || "")}" class="pf-c-form-control" required>
+            <ak-form-element-horizontal label=${t`Name`} ?required=${true} name="name">
+                <input
+                    type="text"
+                    value="${ifDefined(this.instance?.name || "")}"
+                    class="pf-c-form-control"
+                    required
+                />
             </ak-form-element-horizontal>
         </form>`;
     }
-
 }

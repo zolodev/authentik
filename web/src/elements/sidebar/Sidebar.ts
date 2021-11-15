@@ -1,15 +1,16 @@
-import { css, CSSResult, customElement, html, LitElement, TemplateResult } from "lit-element";
-import PFPage from "@patternfly/patternfly/components/Page/page.css";
-import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
+import { CSSResult, LitElement, TemplateResult, css, html } from "lit";
+import { customElement } from "lit/decorators.js";
+
 import AKGlobal from "../../authentik.css";
+import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
+import PFPage from "@patternfly/patternfly/components/Page/page.css";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
 
 import "./SidebarBrand";
 import "./SidebarUser";
 
 @customElement("ak-sidebar")
 export class Sidebar extends LitElement {
-
     static get styles(): CSSResult[] {
         return [
             PFBase,

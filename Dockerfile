@@ -1,5 +1,5 @@
 # Stage 1: Lock python dependencies
-FROM python:3.9-slim-buster as locker
+FROM docker.io/python:3.9-slim-bullseye as locker
 
 COPY ./Pipfile /app/
 COPY ./Pipfile.lock /app/
@@ -11,50 +11,23 @@ RUN pip install pipenv && \
     pipenv lock -r --dev-only > requirements-dev.txt
 
 # Stage 2: Build website
-FROM node as website-builder
+FROM docker.io/node:16 as website-builder
 
 COPY ./website /static/
 
 ENV NODE_ENV=production
 RUN cd /static && npm i && npm run build-docs-only
 
-# Stage 3: Build web API
-FROM openapitools/openapi-generator-cli as web-api-builder
-
-COPY ./schema.yml /local/schema.yml
-
-RUN	docker-entrypoint.sh generate \
-    -i /local/schema.yml \
-    -g typescript-fetch \
-    -o /local/web/api \
-    --additional-properties=typescriptThreePlus=true,supportsES6=true,npmName=authentik-api,npmVersion=1.0.0
-
-# Stage 3: Generate API Client
-FROM openapitools/openapi-generator-cli as go-api-builder
-
-COPY ./schema.yml /local/schema.yml
-
-RUN	docker-entrypoint.sh generate \
-    --git-host goauthentik.io \
-    --git-repo-id outpost \
-    --git-user-id api \
-    -i /local/schema.yml \
-    -g go \
-    -o /local/api \
-    --additional-properties=packageName=api,enumClassPrefix=true,useOneOfDiscriminatorLookup=true && \
-    rm -f /local/api/go.mod /local/api/go.sum
-
-# Stage 4: Build webui
-FROM node as web-builder
+# Stage 3: Build webui
+FROM docker.io/node:16 as web-builder
 
 COPY ./web /static/
-COPY --from=web-api-builder /local/web/api /static/api
 
 ENV NODE_ENV=production
 RUN cd /static && npm i && npm run build
 
-# Stage 5: Build go proxy
-FROM golang:1.16.6 AS builder
+# Stage 4: Build go proxy
+FROM docker.io/golang:1.17.3-bullseye AS builder
 
 WORKDIR /work
 
@@ -64,7 +37,6 @@ COPY --from=web-builder /static/dist/ /work/web/dist/
 COPY --from=web-builder /static/authentik/ /work/web/authentik/
 COPY --from=website-builder /static/help/ /work/website/help/
 
-COPY --from=go-api-builder /local/api api
 COPY ./cmd /work/cmd
 COPY ./web/static.go /work/web/static.go
 COPY ./website/static.go /work/website/static.go
@@ -74,8 +46,8 @@ COPY ./go.sum /work/go.sum
 
 RUN go build -o /work/authentik ./cmd/server/main.go
 
-# Stage 6: Run
-FROM python:3.9-slim-buster
+# Stage 5: Run
+FROM docker.io/python:3.9-slim-bullseye
 
 WORKDIR /
 COPY --from=locker /app/requirements.txt /
@@ -87,7 +59,7 @@ ENV GIT_BUILD_HASH=$GIT_BUILD_HASH
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates gnupg git runit && \
     curl https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - && \
-    echo "deb http://apt.postgresql.org/pub/repos/apt buster-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
+    echo "deb http://apt.postgresql.org/pub/repos/apt bullseye-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
     apt-get update && \
     apt-get install -y --no-install-recommends libpq-dev postgresql-client build-essential libxmlsec1-dev pkg-config libmaxminddb0 && \
     pip install -r /requirements.txt --no-cache-dir && \
@@ -108,6 +80,11 @@ COPY ./lifecycle/ /lifecycle
 COPY --from=builder /work/authentik /authentik-proxy
 
 USER authentik
+
 ENV TMPDIR /dev/shm/
-ENV PYTHONUBUFFERED 1
-ENTRYPOINT [ "/lifecycle/bootstrap.sh" ]
+ENV PYTHONUNBUFFERED 1
+ENV PATH "/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/lifecycle"
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 CMD [ "/lifecycle/ak", "healthcheck" ]
+
+ENTRYPOINT [ "/lifecycle/ak" ]

@@ -1,16 +1,19 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../../api/Client";
-import { TablePage } from "../../../elements/table/TablePage";
 
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import { IPReputation, PoliciesApi } from "@goauthentik/api";
+
+import { AKResponse } from "../../../api/Client";
+import { DEFAULT_CONFIG } from "../../../api/Config";
+import { uiConfig } from "../../../common/config";
 import "../../../elements/buttons/ModalButton";
 import "../../../elements/buttons/SpinnerButton";
-import "../../../elements/forms/DeleteForm";
+import "../../../elements/forms/DeleteBulkForm";
 import "../../../elements/forms/ModalForm";
 import { TableColumn } from "../../../elements/table/Table";
-import { PAGE_SIZE } from "../../../constants";
-import { IPReputation, PoliciesApi } from "authentik-api";
-import { DEFAULT_CONFIG } from "../../../api/Config";
+import { TablePage } from "../../../elements/table/TablePage";
 
 @customElement("ak-policy-reputation-ip-list")
 export class IPReputationListPage extends TablePage<IPReputation> {
@@ -30,11 +33,13 @@ export class IPReputationListPage extends TablePage<IPReputation> {
     @property()
     order = "ip";
 
-    apiEndpoint(page: number): Promise<AKResponse<IPReputation>> {
+    checkbox = true;
+
+    async apiEndpoint(page: number): Promise<AKResponse<IPReputation>> {
         return new PoliciesApi(DEFAULT_CONFIG).policiesReputationIpsList({
             ordering: this.order,
             page: page,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             search: this.search || "",
         });
     }
@@ -43,33 +48,33 @@ export class IPReputationListPage extends TablePage<IPReputation> {
         return [
             new TableColumn(t`IP`, "ip"),
             new TableColumn(t`Score`, "score"),
-            new TableColumn(""),
+            new TableColumn(t`Actions`),
         ];
+    }
+
+    renderToolbarSelected(): TemplateResult {
+        const disabled = this.selectedElements.length < 1;
+        return html`<ak-forms-delete-bulk
+            objectLabel=${t`IP Reputation`}
+            .objects=${this.selectedElements}
+            .usedBy=${(item: IPReputation) => {
+                return new PoliciesApi(DEFAULT_CONFIG).policiesReputationIpsUsedByList({
+                    id: item.pk,
+                });
+            }}
+            .delete=${(item: IPReputation) => {
+                return new PoliciesApi(DEFAULT_CONFIG).policiesReputationIpsDestroy({
+                    id: item.pk,
+                });
+            }}
+        >
+            <button ?disabled=${disabled} slot="trigger" class="pf-c-button pf-m-danger">
+                ${t`Delete`}
+            </button>
+        </ak-forms-delete-bulk>`;
     }
 
     row(item: IPReputation): TemplateResult[] {
-        return [
-            html`${item.ip}`,
-            html`${item.score}`,
-            html`
-            <ak-forms-delete
-                .obj=${item}
-                objectLabel=${t`IP Reputation`}
-                .usedBy=${() => {
-                    return new PoliciesApi(DEFAULT_CONFIG).policiesReputationIpsUsedByList({
-                        id: item.pk
-                    });
-                }}
-                .delete=${() => {
-                    return new PoliciesApi(DEFAULT_CONFIG).policiesReputationIpsDestroy({
-                        id: item.pk,
-                    });
-                }}>
-                <button slot="trigger" class="pf-c-button pf-m-danger">
-                    ${t`Delete`}
-                </button>
-            </ak-forms-delete>`,
-        ];
+        return [html`${item.ip}`, html`${item.score}`];
     }
-
 }

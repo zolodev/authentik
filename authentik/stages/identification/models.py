@@ -46,9 +46,7 @@ class IdentificationStage(Stage):
     )
     case_insensitive_matching = models.BooleanField(
         default=True,
-        help_text=_(
-            "When enabled, user fields are matched regardless of their casing."
-        ),
+        help_text=_("When enabled, user fields are matched regardless of their casing."),
     )
     show_matched_user = models.BooleanField(
         default=True,
@@ -68,9 +66,7 @@ class IdentificationStage(Stage):
         blank=True,
         related_name="+",
         default=None,
-        help_text=_(
-            "Optional enrollment flow, which is linked at the bottom of the page."
-        ),
+        help_text=_("Optional enrollment flow, which is linked at the bottom of the page."),
     )
     recovery_flow = models.ForeignKey(
         Flow,
@@ -79,14 +75,13 @@ class IdentificationStage(Stage):
         blank=True,
         related_name="+",
         default=None,
-        help_text=_(
-            "Optional recovery flow, which is linked at the bottom of the page."
-        ),
+        help_text=_("Optional recovery flow, which is linked at the bottom of the page."),
     )
 
     sources = models.ManyToManyField(
         Source, default=list, help_text=_("Specify which sources should be shown.")
     )
+    show_source_labels = models.BooleanField(default=False)
 
     @property
     def serializer(self) -> BaseSerializer:

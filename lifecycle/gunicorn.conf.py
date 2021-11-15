@@ -1,19 +1,25 @@
 """Gunicorn config"""
 import os
-import warnings
+import pwd
 from multiprocessing import cpu_count
 
 import structlog
 from kubernetes.config.incluster_config import SERVICE_HOST_ENV_NAME
 
 bind = "127.0.0.1:8000"
+reload = True
 
-user = "authentik"
-group = "authentik"
+try:
+    pwd.getpwnam("authentik")
+    user = "authentik"
+    group = "authentik"
+except KeyError:
+    pass
 
 worker_class = "uvicorn.workers.UvicornWorker"
 # Docker containers don't have /tmp as tmpfs
-worker_tmp_dir = "/dev/shm"  # nosec
+if os.path.exists("/dev/shm"):  # nosec
+    worker_tmp_dir = "/dev/shm"  # nosec
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "authentik.root.settings")
 
@@ -29,7 +35,6 @@ logconfig_dict = {
                 structlog.stdlib.add_logger_name,
                 structlog.processors.TimeStamper(),
                 structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
             ],
         }
     },
@@ -51,7 +56,6 @@ logconfig_dict = {
 if SERVICE_HOST_ENV_NAME in os.environ:
     workers = 2
 else:
-    workers = int(os.environ.get("WORKERS", cpu_count() * 2 + 1))
-threads = 4
-
-warnings.simplefilter("once")
+    default_workers = max(cpu_count() * 0.25, 1) + 1  # Minimum of 2 workers
+    workers = int(os.environ.get("WORKERS", default_workers))
+threads = int(os.environ.get("THREADS", 4))

@@ -7,7 +7,7 @@ from selenium.webdriver.common.keys import Keys
 
 from authentik.core.models import User
 from authentik.flows.models import Flow, FlowDesignation
-from authentik.providers.oauth2.generators import generate_client_secret
+from authentik.lib.generators import generate_key
 from authentik.stages.password.models import PasswordStage
 from tests.e2e.utils import USER, SeleniumTestCase, apply_migration, retry
 
@@ -17,7 +17,7 @@ class TestFlowsStageSetup(SeleniumTestCase):
     """test stage setup flows"""
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_stages_password", "0002_passwordstage_change_flow")
@@ -33,7 +33,7 @@ class TestFlowsStageSetup(SeleniumTestCase):
         stage.configure_flow = flow
         stage.save()
 
-        new_password = generate_client_secret()
+        new_password = generate_key()
 
         self.driver.get(
             self.url(
@@ -42,7 +42,7 @@ class TestFlowsStageSetup(SeleniumTestCase):
             )
         )
         self.login()
-        self.wait_for_url(self.if_admin_url("/library"))
+        self.wait_for_url(self.if_user_url("/library"))
 
         self.driver.get(
             self.url(
@@ -54,17 +54,15 @@ class TestFlowsStageSetup(SeleniumTestCase):
         flow_executor = self.get_shadow_root("ak-flow-executor")
         prompt_stage = self.get_shadow_root("ak-stage-prompt", flow_executor)
 
-        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password]").send_keys(new_password)
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password_repeat]").send_keys(
             new_password
         )
-        prompt_stage.find_element(
-            By.CSS_SELECTOR, "input[name=password_repeat]"
-        ).send_keys(new_password)
-        prompt_stage.find_element(
-            By.CSS_SELECTOR, "input[name=password_repeat]"
-        ).send_keys(Keys.ENTER)
+        prompt_stage.find_element(By.CSS_SELECTOR, "input[name=password_repeat]").send_keys(
+            Keys.ENTER
+        )
 
-        self.wait_for_url(self.if_admin_url("/library"))
+        self.wait_for_url(self.if_user_url("/library"))
         # Because USER() is cached, we need to get the user manually here
         user = User.objects.get(username=USER().username)
         self.assertTrue(user.check_password(new_password))

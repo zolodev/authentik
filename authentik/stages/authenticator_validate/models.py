@@ -18,6 +18,7 @@ class DeviceClasses(models.TextChoices):
     TOTP = "totp", _("TOTP")
     WEBAUTHN = "webauthn", _("WebAuthn")
     DUO = "duo", _("Duo")
+    SMS = "sms", _("SMS")
 
 
 def default_device_classes() -> list:
@@ -26,6 +27,8 @@ def default_device_classes() -> list:
         DeviceClasses.STATIC,
         DeviceClasses.TOTP,
         DeviceClasses.WEBAUTHN,
+        DeviceClasses.DUO,
+        DeviceClasses.SMS,
     ]
 
 
@@ -59,17 +62,13 @@ class AuthenticatorValidateStage(Stage):
 
     @property
     def serializer(self) -> BaseSerializer:
-        from authentik.stages.authenticator_validate.api import (
-            AuthenticatorValidateStageSerializer,
-        )
+        from authentik.stages.authenticator_validate.api import AuthenticatorValidateStageSerializer
 
         return AuthenticatorValidateStageSerializer
 
     @property
     def type(self) -> Type[View]:
-        from authentik.stages.authenticator_validate.stage import (
-            AuthenticatorValidateStageView,
-        )
+        from authentik.stages.authenticator_validate.stage import AuthenticatorValidateStageView
 
         return AuthenticatorValidateStageView
 

@@ -17,7 +17,12 @@ from kubernetes.config.incluster_config import SERVICE_TOKEN_FILENAME
 from kubernetes.config.kube_config import KUBE_CONFIG_DEFAULT_LOCATION
 from structlog.stdlib import get_logger
 
-from authentik.events.monitored_tasks import MonitoredTask, TaskResult, TaskResultStatus
+from authentik.events.monitored_tasks import (
+    MonitoredTask,
+    TaskResult,
+    TaskResultStatus,
+    prefill_task,
+)
 from authentik.lib.utils.reflection import path_to_class
 from authentik.outposts.controllers.base import BaseController, ControllerException
 from authentik.outposts.models import (
@@ -28,6 +33,7 @@ from authentik.outposts.models import (
     OutpostServiceConnection,
     OutpostState,
     OutpostType,
+    ServiceConnectionInvalid,
 )
 from authentik.providers.ldap.controllers.docker import LDAPDockerController
 from authentik.providers.ldap.controllers.kubernetes import LDAPKubernetesController
@@ -61,9 +67,7 @@ def controller_for_outpost(outpost: Outpost) -> Optional[BaseController]:
 def outpost_service_connection_state(connection_pk: Any):
     """Update cached state of a service connection"""
     connection: OutpostServiceConnection = (
-        OutpostServiceConnection.objects.filter(pk=connection_pk)
-        .select_subclasses()
-        .first()
+        OutpostServiceConnection.objects.filter(pk=connection_pk).select_subclasses().first()
     )
     if not connection:
         return
@@ -72,6 +76,7 @@ def outpost_service_connection_state(connection_pk: Any):
 
 
 @CELERY_APP.task(bind=True, base=MonitoredTask)
+@prefill_task()
 def outpost_service_connection_monitor(self: MonitoredTask):
     """Regularly check the state of Outpost Service Connections"""
     connections = OutpostServiceConnection.objects.all()
@@ -101,7 +106,7 @@ def outpost_controller(
     if from_cache:
         outpost: Outpost = cache.get(CACHE_KEY_OUTPOST_DOWN % outpost_pk)
     else:
-        outpost: Outpost = Outpost.objects.get(pk=outpost_pk)
+        outpost: Outpost = Outpost.objects.filter(pk=outpost_pk).first()
     if not outpost:
         return
     self.set_uid(slugify(outpost.name))
@@ -114,19 +119,21 @@ def outpost_controller(
         for log in logs:
             LOGGER.debug(log)
         LOGGER.debug("-----------------Outpost Controller logs end-------------------")
-    except ControllerException as exc:
+    except (ControllerException, ServiceConnectionInvalid) as exc:
         self.set_status(TaskResult(TaskResultStatus.ERROR).with_error(exc))
     else:
         self.set_status(TaskResult(TaskResultStatus.SUCCESSFUL, logs))
 
 
 @CELERY_APP.task(bind=True, base=MonitoredTask)
+@prefill_task()
 def outpost_token_ensurer(self: MonitoredTask):
     """Periodically ensure that all Outposts have valid Service Accounts
     and Tokens"""
     all_outposts = Outpost.objects.all()
     for outpost in all_outposts:
         _ = outpost.token
+        outpost.build_user_permissions(outpost.user)
     self.set_status(
         TaskResult(
             TaskResultStatus.SUCCESSFUL,
@@ -149,16 +156,11 @@ def outpost_post_save(model_class: str, model_pk: Any):
         return
 
     if isinstance(instance, Outpost):
-        LOGGER.debug("Ensuring token and permissions for outpost", instance=instance)
-        _ = instance.token
-        _ = instance.user
-        LOGGER.debug("Trigger reconcile for outpost")
+        LOGGER.debug("Trigger reconcile for outpost", instance=instance)
         outpost_controller.delay(instance.pk)
 
     if isinstance(instance, (OutpostModel, Outpost)):
-        LOGGER.debug(
-            "triggering outpost update from outpostmodel/outpost", instance=instance
-        )
+        LOGGER.debug("triggering outpost update from outpostmodel/outpost", instance=instance)
         outpost_send_update(instance)
 
     if isinstance(instance, OutpostServiceConnection):
@@ -187,7 +189,7 @@ def outpost_post_save(model_class: str, model_pk: Any):
 
 
 def outpost_send_update(model_instace: Model):
-    """Send outpost update to all registered outposts, irregardless to which authentik
+    """Send outpost update to all registered outposts, regardless to which authentik
     instance they are connected"""
     channel_layer = get_channel_layer()
     if isinstance(model_instace, OutpostModel):
@@ -202,21 +204,19 @@ def _outpost_single_update(outpost: Outpost, layer=None):
     # Ensure token again, because this function is called when anything related to an
     # OutpostModel is saved, so we can be sure permissions are right
     _ = outpost.token
-    _ = outpost.user
+    outpost.build_user_permissions(outpost.user)
     if not layer:  # pragma: no cover
         layer = get_channel_layer()
     for state in OutpostState.for_outpost(outpost):
         for channel in state.channel_ids:
-            LOGGER.debug(
-                "sending update", channel=channel, instance=state.uid, outpost=outpost
-            )
+            LOGGER.debug("sending update", channel=channel, instance=state.uid, outpost=outpost)
             async_to_sync(layer.send)(channel, {"type": "event.update"})
 
 
 @CELERY_APP.task()
 def outpost_local_connection():
     """Checks the local environment and create Service connections."""
-    # Explicitly check against token filename, as thats
+    # Explicitly check against token filename, as that's
     # only present when the integration is enabled
     if Path(SERVICE_TOKEN_FILENAME).exists():
         LOGGER.debug("Detected in-cluster Kubernetes Config")
@@ -230,11 +230,9 @@ def outpost_local_connection():
     if Path(kubeconfig_path).exists():
         LOGGER.debug("Detected kubeconfig")
         kubeconfig_local_name = f"k8s-{gethostname()}"
-        if not KubernetesServiceConnection.objects.filter(
-            name=kubeconfig_local_name
-        ).exists():
+        if not KubernetesServiceConnection.objects.filter(name=kubeconfig_local_name).exists():
             LOGGER.debug("Creating kubeconfig Service Connection")
-            with open(kubeconfig_path, "r") as _kubeconfig:
+            with open(kubeconfig_path, "r", encoding="utf8") as _kubeconfig:
                 KubernetesServiceConnection.objects.create(
                     name=kubeconfig_local_name,
                     kubeconfig=yaml.safe_load(_kubeconfig),

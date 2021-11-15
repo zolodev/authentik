@@ -3,7 +3,11 @@ title: Example Flows
 ---
 
 :::info
-You can apply theses flows multiple times to stay updated, however this will discard all changes you've made.
+You can apply these flows multiple times to stay updated, however this will discard all changes you've made.
+:::
+
+:::info
+The example flows provided below will **override** the default flows, please review the contents of the example flow before importing and consider exporting the affected existing flows first.
 :::
 
 ## Enrollment (2 Stage)

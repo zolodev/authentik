@@ -1,17 +1,19 @@
-import { HaveIBeenPwendPolicy, PoliciesApi } from "authentik-api";
 import { t } from "@lingui/macro";
-import { customElement } from "lit-element";
-import { html, TemplateResult } from "lit-html";
+
+import { TemplateResult, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import { HaveIBeenPwendPolicy, PoliciesApi } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../../api/Config";
-import { ifDefined } from "lit-html/directives/if-defined";
-import "../../../elements/forms/HorizontalFormElement";
 import "../../../elements/forms/FormGroup";
-import { first } from "../../../utils";
+import "../../../elements/forms/HorizontalFormElement";
 import { ModelForm } from "../../../elements/forms/ModelForm";
+import { first } from "../../../utils";
 
 @customElement("ak-policy-hibp-form")
 export class HaveIBeenPwnedPolicyForm extends ModelForm<HaveIBeenPwendPolicy, string> {
-
     loadInstance(pk: string): Promise<HaveIBeenPwendPolicy> {
         return new PoliciesApi(DEFAULT_CONFIG).policiesHaveibeenpwnedRetrieve({
             policyUuid: pk,
@@ -30,11 +32,11 @@ export class HaveIBeenPwnedPolicyForm extends ModelForm<HaveIBeenPwendPolicy, st
         if (this.instance) {
             return new PoliciesApi(DEFAULT_CONFIG).policiesHaveibeenpwnedUpdate({
                 policyUuid: this.instance.pk || "",
-                haveIBeenPwendPolicyRequest: data
+                haveIBeenPwendPolicyRequest: data,
             });
         } else {
             return new PoliciesApi(DEFAULT_CONFIG).policiesHaveibeenpwnedCreate({
-                haveIBeenPwendPolicyRequest: data
+                haveIBeenPwendPolicyRequest: data,
             });
         }
     };
@@ -45,45 +47,62 @@ export class HaveIBeenPwnedPolicyForm extends ModelForm<HaveIBeenPwendPolicy, st
                 ${t`Checks a value from the policy request against the Have I been Pwned API, and denys the request based upon that.
                 Note that only a part of the hash of the password is sent, the full comparison is done clientside.`}
             </div>
-            <ak-form-element-horizontal
-                label=${t`Name`}
-                ?required=${true}
-                name="name">
-                <input type="text" value="${ifDefined(this.instance?.name || "")}" class="pf-c-form-control" required>
+            <ak-form-element-horizontal label=${t`Name`} ?required=${true} name="name">
+                <input
+                    type="text"
+                    value="${ifDefined(this.instance?.name || "")}"
+                    class="pf-c-form-control"
+                    required
+                />
             </ak-form-element-horizontal>
             <ak-form-element-horizontal name="executionLogging">
                 <div class="pf-c-check">
-                    <input type="checkbox" class="pf-c-check__input" ?checked=${first(this.instance?.executionLogging, false)}>
-                    <label class="pf-c-check__label">
-                        ${t`Execution logging`}
-                    </label>
+                    <input
+                        type="checkbox"
+                        class="pf-c-check__input"
+                        ?checked=${first(this.instance?.executionLogging, false)}
+                    />
+                    <label class="pf-c-check__label"> ${t`Execution logging`} </label>
                 </div>
                 <p class="pf-c-form__helper-text">
                     ${t`When this option is enabled, all executions of this policy will be logged. By default, only execution errors are logged.`}
                 </p>
             </ak-form-element-horizontal>
             <ak-form-group .expanded=${true}>
-                <span slot="header">
-                    ${t`Policy-specific settings`}
-                </span>
+                <span slot="header"> ${t`Policy-specific settings`} </span>
                 <div slot="body" class="pf-c-form">
                     <ak-form-element-horizontal
                         label=${t`Password field`}
                         ?required=${true}
-                        name="passwordField">
-                        <input type="text" value="${ifDefined(this.instance?.passwordField || "password")}" class="pf-c-form-control" required>
-                        <p class="pf-c-form__helper-text">${t`Field key to check, field keys defined in Prompt stages are available.`}</p>
+                        name="passwordField"
+                    >
+                        <input
+                            type="text"
+                            value="${ifDefined(this.instance?.passwordField || "password")}"
+                            class="pf-c-form-control"
+                            required
+                        />
+                        <p class="pf-c-form__helper-text">
+                            ${t`Field key to check, field keys defined in Prompt stages are available.`}
+                        </p>
                     </ak-form-element-horizontal>
                     <ak-form-element-horizontal
                         label=${t`Allowed count`}
                         ?required=${true}
-                        name="allowedCount">
-                        <input type="number" value="${first(this.instance?.allowedCount, 0)}" class="pf-c-form-control" required>
-                        <p class="pf-c-form__helper-text">${t`Allow up to N occurrences in the HIBP database.`}</p>
+                        name="allowedCount"
+                    >
+                        <input
+                            type="number"
+                            value="${first(this.instance?.allowedCount, 0)}"
+                            class="pf-c-form-control"
+                            required
+                        />
+                        <p class="pf-c-form__helper-text">
+                            ${t`Allow up to N occurrences in the HIBP database.`}
+                        </p>
                     </ak-form-element-horizontal>
                 </div>
             </ak-form-group>
         </form>`;
     }
-
 }

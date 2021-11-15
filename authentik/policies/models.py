@@ -49,9 +49,7 @@ class PolicyBindingModel(models.Model):
 class PolicyBinding(SerializerModel):
     """Relationship between a Policy and a PolicyBindingModel."""
 
-    policy_binding_uuid = models.UUIDField(
-        primary_key=True, editable=False, default=uuid4
-    )
+    policy_binding_uuid = models.UUIDField(primary_key=True, editable=False, default=uuid4)
 
     enabled = models.BooleanField(default=True)
 
@@ -67,23 +65,21 @@ class PolicyBinding(SerializerModel):
         # This is quite an ugly hack to prevent pylint from trying
         # to resolve authentik_core.models.Group
         # as python import path
-        "authentik_core." + "Group",
+        "authentik_core.Group",
         on_delete=models.CASCADE,
         default=None,
         null=True,
         blank=True,
     )
     user = models.ForeignKey(
-        "authentik_core." + "User",
+        "authentik_core.User",
         on_delete=models.CASCADE,
         default=None,
         null=True,
         blank=True,
     )
 
-    target = InheritanceForeignKey(
-        PolicyBindingModel, on_delete=models.CASCADE, related_name="+"
-    )
+    target = InheritanceForeignKey(PolicyBindingModel, on_delete=models.CASCADE, related_name="+")
     negate = models.BooleanField(
         default=False,
         help_text=_("Negates the outcome of the policy. Messages are unaffected."),
@@ -100,7 +96,7 @@ class PolicyBinding(SerializerModel):
             self.policy: Policy
             return self.policy.passes(request)
         if self.group:
-            return PolicyResult(self.group.users.filter(pk=request.user.pk).exists())
+            return PolicyResult(self.group.is_member(request.user))
         if self.user:
             return PolicyResult(request.user == self.user)
         return PolicyResult(False)

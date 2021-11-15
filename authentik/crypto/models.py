@@ -13,9 +13,10 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from authentik.lib.models import CreatedUpdatedModel
+from authentik.managed.models import ManagedModel
 
 
-class CertificateKeyPair(CreatedUpdatedModel):
+class CertificateKeyPair(ManagedModel, CreatedUpdatedModel):
     """CertificateKeyPair that can be used for signing or encrypting if `key_data`
     is set, otherwise it can be used to verify remote data."""
 
@@ -57,9 +58,7 @@ class CertificateKeyPair(CreatedUpdatedModel):
         if not self._private_key and self._private_key != "":
             try:
                 self._private_key = load_pem_private_key(
-                    str.encode(
-                        "\n".join([x.strip() for x in self.key_data.split("\n")])
-                    ),
+                    str.encode("\n".join([x.strip() for x in self.key_data.split("\n")])),
                     password=None,
                     backend=default_backend(),
                 )
@@ -70,25 +69,17 @@ class CertificateKeyPair(CreatedUpdatedModel):
     @property
     def fingerprint_sha256(self) -> str:
         """Get SHA256 Fingerprint of certificate_data"""
-        return hexlify(self.certificate.fingerprint(hashes.SHA256()), ":").decode(
-            "utf-8"
-        )
+        return hexlify(self.certificate.fingerprint(hashes.SHA256()), ":").decode("utf-8")
 
     @property
     def fingerprint_sha1(self) -> str:
         """Get SHA1 Fingerprint of certificate_data"""
-        return hexlify(
-            self.certificate.fingerprint(hashes.SHA1()), ":"  # nosec
-        ).decode("utf-8")
+        return hexlify(self.certificate.fingerprint(hashes.SHA1()), ":").decode("utf-8")  # nosec
 
     @property
     def kid(self):
         """Get Key ID used for JWKS"""
-        return "{0}".format(
-            md5(self.key_data.encode("utf-8")).hexdigest()  # nosec
-            if self.key_data
-            else ""
-        )
+        return md5(self.key_data.encode("utf-8")).hexdigest() if self.key_data else ""  # nosec
 
     def __str__(self) -> str:
         return f"Certificate-Key Pair {self.name}"

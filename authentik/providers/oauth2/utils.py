@@ -103,9 +103,8 @@ def extract_client_auth(request: HttpRequest) -> tuple[str, str]:
     if re.compile(r"^Basic\s{1}.+$").match(auth_header):
         b64_user_pass = auth_header.split()[1]
         try:
-            client_id, _, client_secret = (
-                b64decode(b64_user_pass).decode("utf-8").partition(":")
-            )
+            user_pass = b64decode(b64_user_pass).decode("utf-8").partition(":")
+            client_id, _, client_secret = user_pass
         except (ValueError, Error):
             client_id = client_secret = ""  # nosec
     else:
@@ -134,9 +133,7 @@ def protected_resource_view(scopes: list[str]):
                     raise BearerTokenError("invalid_token")
 
                 try:
-                    token: RefreshToken = RefreshToken.objects.get(
-                        access_token=access_token
-                    )
+                    token: RefreshToken = RefreshToken.objects.get(access_token=access_token)
                 except RefreshToken.DoesNotExist:
                     LOGGER.debug("Token does not exist", access_token=access_token)
                     raise BearerTokenError("invalid_token")
@@ -156,7 +153,7 @@ def protected_resource_view(scopes: list[str]):
 
                 if not set(scopes).issubset(set(token.scope)):
                     LOGGER.warning(
-                        "Scope missmatch.",
+                        "Scope mismatch.",
                         required=set(scopes),
                         token_has=set(token.scope),
                     )

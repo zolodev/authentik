@@ -1,33 +1,23 @@
 """Base Kubernetes Reconciler"""
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, TypeVar
 
 from django.utils.text import slugify
 from kubernetes.client import V1ObjectMeta
+from kubernetes.client.exceptions import ApiException, OpenApiException
 from kubernetes.client.models.v1_deployment import V1Deployment
 from kubernetes.client.models.v1_pod import V1Pod
-from kubernetes.client.rest import ApiException
 from structlog.stdlib import get_logger
+from urllib3.exceptions import HTTPError
 
 from authentik import __version__
-from authentik.lib.sentry import SentryIgnoredException
+from authentik.outposts.controllers.k8s.triggers import NeedsRecreate, NeedsUpdate
+from authentik.outposts.managed import MANAGED_OUTPOST
 
 if TYPE_CHECKING:
     from authentik.outposts.controllers.kubernetes import KubernetesController
 
 # pylint: disable=invalid-name
 T = TypeVar("T", V1Pod, V1Deployment)
-
-
-class ReconcileTrigger(SentryIgnoredException):
-    """Base trigger raised by child classes to notify us"""
-
-
-class NeedsRecreate(ReconcileTrigger):
-    """Exception to trigger a complete recreate of the Kubernetes Object"""
-
-
-class NeedsUpdate(ReconcileTrigger):
-    """Exception to trigger an update to the Kubernetes Object"""
 
 
 class KubernetesObjectReconciler(Generic[T]):
@@ -39,6 +29,11 @@ class KubernetesObjectReconciler(Generic[T]):
         self.controller = controller
         self.namespace = controller.outpost.config.kubernetes_namespace
         self.logger = get_logger().bind(type=self.__class__.__name__)
+
+    @property
+    def is_embedded(self) -> bool:
+        """Return true if the current outpost is embedded"""
+        return self.controller.outpost.managed == MANAGED_OUTPOST
 
     @property
     def noop(self) -> bool:
@@ -66,28 +61,42 @@ class KubernetesObjectReconciler(Generic[T]):
         try:
             try:
                 current = self.retrieve()
-            except ApiException as exc:
-                if exc.status == 404:
+            except (OpenApiException, HTTPError) as exc:
+                # pylint: disable=no-member
+                if isinstance(exc, ApiException) and exc.status == 404:
                     self.logger.debug("Failed to get current, triggering recreate")
                     raise NeedsRecreate from exc
                 self.logger.debug("Other unhandled error", exc=exc)
                 raise exc
             else:
                 self.reconcile(current, reference)
-        except NeedsRecreate:
-            self.logger.debug("Recreate requested")
-            if current:
-                self.logger.debug("Deleted old")
-                self.delete(current)
-            else:
-                self.logger.debug("No old found, creating")
-            self.logger.debug("Creating")
-            self.create(reference)
         except NeedsUpdate:
-            self.logger.debug("Updating")
-            self.update(current, reference)
+            try:
+                self.update(current, reference)
+                self.logger.debug("Updating")
+            except (OpenApiException, HTTPError) as exc:
+                # pylint: disable=no-member
+                if isinstance(exc, ApiException) and exc.status == 422:
+                    self.logger.debug("Failed to update current, triggering re-create")
+                    self._recreate(current=current, reference=reference)
+                    return
+                self.logger.debug("Other unhandled error", exc=exc)
+                raise exc
+        except NeedsRecreate:
+            self._recreate(current=current, reference=reference)
         else:
             self.logger.debug("Object is up-to-date.")
+
+    def _recreate(self, reference: T, current: Optional[T] = None):
+        """Recreate object"""
+        self.logger.debug("Recreate requested")
+        if current:
+            self.logger.debug("Deleted old")
+            self.delete(current)
+        else:
+            self.logger.debug("No old found, creating")
+        self.logger.debug("Creating")
+        self.create(reference)
 
     def down(self):
         """Delete object if found"""
@@ -98,9 +107,10 @@ class KubernetesObjectReconciler(Generic[T]):
             current = self.retrieve()
             self.delete(current)
             self.logger.debug("Removing")
-        except ApiException as exc:
-            if exc.status == 404:
-                self.logger.debug("Failed to get current, assuming non-existant")
+        except (OpenApiException, HTTPError) as exc:
+            # pylint: disable=no-member
+            if isinstance(exc, ApiException) and exc.status == 404:
+                self.logger.debug("Failed to get current, assuming non-existent")
                 return
             self.logger.debug("Other unhandled error", exc=exc)
             raise exc
@@ -120,7 +130,7 @@ class KubernetesObjectReconciler(Generic[T]):
         raise NotImplementedError
 
     def retrieve(self) -> T:
-        """API Wrapper to retrive object"""
+        """API Wrapper to retrieve object"""
         raise NotImplementedError
 
     def delete(self, reference: T):
@@ -141,6 +151,8 @@ class KubernetesObjectReconciler(Generic[T]):
                 "app.kubernetes.io/version": __version__,
                 "app.kubernetes.io/managed-by": "goauthentik.io",
                 "goauthentik.io/outpost-uuid": self.controller.outpost.uuid.hex,
+                "goauthentik.io/outpost-type": str(self.controller.outpost.type),
+                "goauthentik.io/outpost-name": slugify(self.controller.outpost.name),
             },
             **kwargs,
         )

@@ -10,6 +10,13 @@ from authentik.crypto.models import CertificateKeyPair
 from authentik.outposts.models import OutpostModel
 
 
+class SearchModes(models.TextChoices):
+    """Search modes"""
+
+    DIRECT = "direct"
+    CACHED = "cached"
+
+
 class LDAPProvider(OutpostModel, Provider):
     """Allow applications to authenticate against authentik's users using LDAP."""
 
@@ -59,6 +66,8 @@ class LDAPProvider(OutpostModel, Provider):
         ),
     )
 
+    search_mode = models.TextField(default=SearchModes.DIRECT, choices=SearchModes.choices)
+
     @property
     def launch_url(self) -> Optional[str]:
         """LDAP never has a launch URL"""
@@ -78,7 +87,10 @@ class LDAPProvider(OutpostModel, Provider):
         return f"LDAP Provider {self.name}"
 
     def get_required_objects(self) -> Iterable[Union[models.Model, str]]:
-        return [self, "authentik_core.view_user", "authentik_core.view_group"]
+        required_models = [self, "authentik_core.view_user", "authentik_core.view_group"]
+        if self.certificate is not None:
+            required_models.append(self.certificate)
+        return required_models
 
     class Meta:
 

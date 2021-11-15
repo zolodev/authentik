@@ -5,11 +5,23 @@ postgresql:
   user: authentik
   port: 5432
   password: 'env://POSTGRES_PASSWORD'
+  backup:
+    enabled: true
+  s3_backup:
+    access_key: ""
+    secret_key: ""
+    bucket: ""
+    region: eu-central-1
+    host: ""
+    location: ""
+    insecure_skip_verify: false
 
 web:
   listen: 0.0.0.0:9000
   listen_tls: 0.0.0.0:9443
+  listen_metrics: 0.0.0.0:9300
   load_local_files: false
+  outpost_port_offset: 0
 
 redis:
   host: localhost
@@ -20,6 +32,7 @@ redis:
   cache_db: 0
   message_queue_db: 1
   ws_db: 2
+  outpost_session_db: 3
   cache_timeout: 300
   cache_timeout_flows: 300
   cache_timeout_policies: 300
@@ -51,14 +64,19 @@ outposts:
   # %(type)s: Outpost type; proxy, ldap, etc
   # %(version)s: Current version; 2021.4.1
   # %(build_hash)s: Build hash if you're running a beta version
-  docker_image_base: "ghcr.io/goauthentik/%(type)s:%(version)s"
+  container_image_base: goauthentik.io/%(type)s:%(version)s
 
+cookie_domain: null
+disable_update_check: false
+disable_startup_analytics: false
 avatars: env://AUTHENTIK_AUTHENTIK__AVATARS?gravatar
 geoip: "./GeoLite2-City.mmdb"
 
-# Can't currently be configured via environment variables, only yaml
 footer_links:
   - name: Documentation
-    href: https://goauthentik.io/docs/
+    href: https://goauthentik.io/docs/?utm_source=authentik
   - name: authentik Website
-    href: https://goauthentik.io/
+    href: https://goauthentik.io/?utm_source=authentik
+
+default_user_change_email: true
+default_user_change_username: true

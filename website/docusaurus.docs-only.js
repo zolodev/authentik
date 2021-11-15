@@ -4,7 +4,7 @@ module.exports = {
     title: "authentik",
     tagline: "Making authentication simple.",
     url: "https://goauthentik.io",
-    baseUrl: "/help/",
+    baseUrl: "/if/help/",
     onBrokenLinks: "throw",
     favicon: "img/icon.png",
     organizationName: "BeryJu",
@@ -35,7 +35,7 @@ module.exports = {
                     position: "right",
                 },
                 {
-                    href: "https://discord.gg/jg33eMhnj6",
+                    href: "https://goauthentik.io/discord",
                     label: "Discord",
                     position: "right",
                 },

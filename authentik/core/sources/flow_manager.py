@@ -11,16 +11,8 @@ from django.urls import reverse
 from django.utils.translation import gettext as _
 from structlog.stdlib import get_logger
 
-from authentik.core.models import (
-    Source,
-    SourceUserMatchingModes,
-    User,
-    UserSourceConnection,
-)
-from authentik.core.sources.stage import (
-    PLAN_CONTEXT_SOURCES_CONNECTION,
-    PostUserEnrollmentStage,
-)
+from authentik.core.models import Source, SourceUserMatchingModes, User, UserSourceConnection
+from authentik.core.sources.stage import PLAN_CONTEXT_SOURCES_CONNECTION, PostUserEnrollmentStage
 from authentik.events.models import Event, EventAction
 from authentik.flows.models import Flow, Stage, in_memory_stage
 from authentik.flows.planner import (
@@ -30,10 +22,10 @@ from authentik.flows.planner import (
     PLAN_CONTEXT_SSO,
     FlowPlanner,
 )
-from authentik.flows.views import NEXT_ARG_NAME, SESSION_KEY_GET, SESSION_KEY_PLAN
+from authentik.flows.views.executor import NEXT_ARG_NAME, SESSION_KEY_GET, SESSION_KEY_PLAN
 from authentik.lib.utils.urls import redirect_with_qs
 from authentik.policies.utils import delete_none_keys
-from authentik.stages.password import BACKEND_DJANGO
+from authentik.stages.password import BACKEND_INBUILT
 from authentik.stages.password.stage import PLAN_CONTEXT_AUTHENTICATION_BACKEND
 from authentik.stages.prompt.stage import PLAN_CONTEXT_PROMPT
 
@@ -76,9 +68,7 @@ class SourceFlowManager:
     # pylint: disable=too-many-return-statements
     def get_action(self, **kwargs) -> tuple[Action, Optional[UserSourceConnection]]:
         """decide which action should be taken"""
-        new_connection = self.connection_type(
-            source=self.source, identifier=self.identifier
-        )
+        new_connection = self.connection_type(source=self.source, identifier=self.identifier)
         # When request is authenticated, always link
         if self.request.user.is_authenticated:
             new_connection.user = self.request.user
@@ -113,9 +103,7 @@ class SourceFlowManager:
             SourceUserMatchingModes.USERNAME_DENY,
         ]:
             if not self.enroll_info.get("username", None):
-                self._logger.warning(
-                    "Refusing to use none username", source=self.source
-                )
+                self._logger.warning("Refusing to use none username", source=self.source)
                 return Action.DENY, None
             query = Q(username__exact=self.enroll_info.get("username", None))
         self._logger.debug("trying to link with existing user", query=query)
@@ -141,11 +129,11 @@ class SourceFlowManager:
             self._logger.info("denying source because user exists", user=user)
             return Action.DENY, None
         # Should never get here as default enroll case is returned above.
-        return Action.DENY, None
+        return Action.DENY, None  # pragma: no cover
 
     def update_connection(
         self, connection: UserSourceConnection, **kwargs
-    ) -> UserSourceConnection:
+    ) -> UserSourceConnection:  # pragma: no cover
         """Optionally make changes to the connection after it is looked up/created."""
         return connection
 
@@ -178,7 +166,7 @@ class SourceFlowManager:
                 % {"source": self.source.name}
             ),
         )
-        return redirect("/")
+        return redirect(reverse("authentik_core:root-redirect"))
 
     # pylint: disable=unused-argument
     def get_stages_to_append(self, flow: Flow) -> list[Stage]:
@@ -196,12 +184,12 @@ class SourceFlowManager:
         # Ensure redirect is carried through when user was trying to
         # authorize application
         final_redirect = self.request.session.get(SESSION_KEY_GET, {}).get(
-            NEXT_ARG_NAME, "authentik_core:if-admin"
+            NEXT_ARG_NAME, "authentik_core:if-user"
         )
         kwargs.update(
             {
                 # Since we authenticate the user by their token, they have no backend set
-                PLAN_CONTEXT_AUTHENTICATION_BACKEND: BACKEND_DJANGO,
+                PLAN_CONTEXT_AUTHENTICATION_BACKEND: BACKEND_INBUILT,
                 PLAN_CONTEXT_SSO: True,
                 PLAN_CONTEXT_SOURCE: self.source,
                 PLAN_CONTEXT_REDIRECT: final_redirect,
@@ -229,10 +217,7 @@ class SourceFlowManager:
         """Login user and redirect."""
         messages.success(
             self.request,
-            _(
-                "Successfully authenticated with %(source)s!"
-                % {"source": self.source.name}
-            ),
+            _("Successfully authenticated with %(source)s!" % {"source": self.source.name}),
         )
         flow_kwargs = {PLAN_CONTEXT_PENDING_USER: connection.user}
         return self._handle_login_flow(self.source.authentication_flow, **flow_kwargs)
@@ -258,9 +243,9 @@ class SourceFlowManager:
             return self.handle_auth_user(connection)
         return redirect(
             reverse(
-                "authentik_core:if-admin",
+                "authentik_core:if-user",
             )
-            + f"#/user;page-{self.source.slug}"
+            + f"#/settings;page-{self.source.slug}"
         )
 
     def handle_enroll(
@@ -270,10 +255,7 @@ class SourceFlowManager:
         """User was not authenticated and previous request was not authenticated."""
         messages.success(
             self.request,
-            _(
-                "Successfully authenticated with %(source)s!"
-                % {"source": self.source.name}
-            ),
+            _("Successfully authenticated with %(source)s!" % {"source": self.source.name}),
         )
 
         # We run the Flow planner here so we can pass the Pending user in the context

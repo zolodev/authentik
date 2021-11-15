@@ -1,17 +1,19 @@
-import { ReputationPolicy, PoliciesApi } from "authentik-api";
 import { t } from "@lingui/macro";
-import { customElement } from "lit-element";
-import { html, TemplateResult } from "lit-html";
+
+import { TemplateResult, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import { PoliciesApi, ReputationPolicy } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../../api/Config";
-import { ifDefined } from "lit-html/directives/if-defined";
-import "../../../elements/forms/HorizontalFormElement";
 import "../../../elements/forms/FormGroup";
-import { first } from "../../../utils";
+import "../../../elements/forms/HorizontalFormElement";
 import { ModelForm } from "../../../elements/forms/ModelForm";
+import { first } from "../../../utils";
 
 @customElement("ak-policy-reputation-form")
 export class ReputationPolicyForm extends ModelForm<ReputationPolicy, string> {
-
     loadInstance(pk: string): Promise<ReputationPolicy> {
         return new PoliciesApi(DEFAULT_CONFIG).policiesReputationRetrieve({
             policyUuid: pk,
@@ -30,11 +32,11 @@ export class ReputationPolicyForm extends ModelForm<ReputationPolicy, string> {
         if (this.instance) {
             return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUpdate({
                 policyUuid: this.instance.pk || "",
-                reputationPolicyRequest: data
+                reputationPolicyRequest: data,
             });
         } else {
             return new PoliciesApi(DEFAULT_CONFIG).policiesReputationCreate({
-                reputationPolicyRequest: data
+                reputationPolicyRequest: data,
             });
         }
     };
@@ -49,53 +51,64 @@ export class ReputationPolicyForm extends ModelForm<ReputationPolicy, string> {
                 doesn't pass when either or both of the selected options are equal or less than the
                 threshold.`}
             </div>
-            <ak-form-element-horizontal
-                label=${t`Name`}
-                ?required=${true}
-                name="name">
-                <input type="text" value="${ifDefined(this.instance?.name || "")}" class="pf-c-form-control" required>
+            <ak-form-element-horizontal label=${t`Name`} ?required=${true} name="name">
+                <input
+                    type="text"
+                    value="${ifDefined(this.instance?.name || "")}"
+                    class="pf-c-form-control"
+                    required
+                />
             </ak-form-element-horizontal>
             <ak-form-element-horizontal name="executionLogging">
                 <div class="pf-c-check">
-                    <input type="checkbox" class="pf-c-check__input" ?checked=${first(this.instance?.executionLogging, false)}>
-                    <label class="pf-c-check__label">
-                        ${t`Execution logging`}
-                    </label>
+                    <input
+                        type="checkbox"
+                        class="pf-c-check__input"
+                        ?checked=${first(this.instance?.executionLogging, false)}
+                    />
+                    <label class="pf-c-check__label"> ${t`Execution logging`} </label>
                 </div>
                 <p class="pf-c-form__helper-text">
                     ${t`When this option is enabled, all executions of this policy will be logged. By default, only execution errors are logged.`}
                 </p>
             </ak-form-element-horizontal>
             <ak-form-group .expanded=${true}>
-                <span slot="header">
-                    ${t`Policy-specific settings`}
-                </span>
+                <span slot="header"> ${t`Policy-specific settings`} </span>
                 <div slot="body" class="pf-c-form">
                     <ak-form-element-horizontal name="checkIp">
                         <div class="pf-c-check">
-                            <input type="checkbox" class="pf-c-check__input" ?checked=${first(this.instance?.checkIp, false)}>
-                            <label class="pf-c-check__label">
-                                ${t`Check IP`}
-                            </label>
+                            <input
+                                type="checkbox"
+                                class="pf-c-check__input"
+                                ?checked=${first(this.instance?.checkIp, false)}
+                            />
+                            <label class="pf-c-check__label"> ${t`Check IP`} </label>
                         </div>
                     </ak-form-element-horizontal>
                     <ak-form-element-horizontal name="checkUsername">
                         <div class="pf-c-check">
-                            <input type="checkbox" class="pf-c-check__input" ?checked=${first(this.instance?.checkUsername, false)}>
-                            <label class="pf-c-check__label">
-                                ${t`Check Username`}
-                            </label>
+                            <input
+                                type="checkbox"
+                                class="pf-c-check__input"
+                                ?checked=${first(this.instance?.checkUsername, false)}
+                            />
+                            <label class="pf-c-check__label"> ${t`Check Username`} </label>
                         </div>
                     </ak-form-element-horizontal>
                     <ak-form-element-horizontal
                         label=${t`Threshold`}
                         ?required=${true}
-                        name="threshold">
-                        <input type="number" value="${ifDefined(this.instance?.threshold || -5)}" class="pf-c-form-control" required>
+                        name="threshold"
+                    >
+                        <input
+                            type="number"
+                            value="${ifDefined(this.instance?.threshold || -5)}"
+                            class="pf-c-form-control"
+                            required
+                        />
                     </ak-form-element-horizontal>
                 </div>
             </ak-form-group>
         </form>`;
     }
-
 }

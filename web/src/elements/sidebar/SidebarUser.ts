@@ -1,16 +1,16 @@
-import { css, CSSResult, customElement, html, LitElement, TemplateResult } from "lit-element";
-import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
+import { CSSResult, LitElement, TemplateResult, css, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+import { until } from "lit/directives/until.js";
+
 import PFAvatar from "@patternfly/patternfly/components/Avatar/avatar.css";
-import { me } from "../../api/Users";
-import { until } from "lit-html/directives/until";
+import PFNav from "@patternfly/patternfly/components/Nav/nav.css";
 import PFBase from "@patternfly/patternfly/patternfly-base.css";
 
-import "../notifications/NotificationTrigger";
-import { ifDefined } from "lit-html/directives/if-defined";
+import { me } from "../../api/Users";
 
 @customElement("ak-sidebar-user")
 export class SidebarUser extends LitElement {
-
     static get styles(): CSSResult[] {
         return [
             PFBase,
@@ -34,13 +34,18 @@ export class SidebarUser extends LitElement {
 
     render(): TemplateResult {
         return html`
-            <a href="#/user" class="pf-c-nav__link user-avatar" id="user-settings">
-                ${until(me().then((u) => {
-                    return html`<img class="pf-c-avatar" src="${ifDefined(u.user.avatar)}" alt="" />`;
-                }), html``)}
+            <a href="/if/user/#/settings" class="pf-c-nav__link user-avatar" id="user-settings">
+                ${until(
+                    me().then((u) => {
+                        return html`<img
+                            class="pf-c-avatar"
+                            src="${ifDefined(u.user.avatar)}"
+                            alt=""
+                        />`;
+                    }),
+                    html``,
+                )}
             </a>
-            <ak-notification-trigger class="pf-c-nav__link user-notifications">
-            </ak-notification-trigger>
             <a href="/flows/-/default/invalidation/" class="pf-c-nav__link user-logout" id="logout">
                 <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
             </a>

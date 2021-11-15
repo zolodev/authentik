@@ -71,9 +71,7 @@ class ClientIdError(OAuth2Error):
         self.client_id = client_id
 
     def to_event(self, **kwargs) -> Event:
-        return super().to_event(
-            f"Invalid client identifier: {self.client_id}.", **kwargs
-        )
+        return super().to_event(f"Invalid client identifier: {self.client_id}.", **kwargs)
 
 
 class UserAuthError(OAuth2Error):
@@ -103,8 +101,7 @@ class AuthorizeError(OAuth2Error):
         "invalid_request": "The request is otherwise malformed",
         "unauthorized_client": "The client is not authorized to request an "
         "authorization code using this method",
-        "access_denied": "The resource owner or authorization server denied "
-        "the request",
+        "access_denied": "The resource owner or authorization server denied " "the request",
         "unsupported_response_type": "The authorization server does not "
         "support obtaining an authorization code "
         "using this method",
@@ -118,17 +115,14 @@ class AuthorizeError(OAuth2Error):
         # http://openid.net/specs/openid-connect-core-1_0.html#AuthError
         "interaction_required": "The Authorization Server requires End-User "
         "interaction of some form to proceed",
-        "login_required": "The Authorization Server requires End-User "
-        "authentication",
+        "login_required": "The Authorization Server requires End-User " "authentication",
         "account_selection_required": "The End-User is required to select a "
         "session at the Authorization Server",
         "consent_required": "The Authorization Server requires End-User" "consent",
         "invalid_request_uri": "The request_uri in the Authorization Request "
         "returns an error or contains invalid data",
-        "invalid_request_object": "The request parameter contains an invalid "
-        "Request Object",
-        "request_not_supported": "The provider does not support use of the "
-        "request parameter",
+        "invalid_request_object": "The request parameter contains an invalid " "Request Object",
+        "request_not_supported": "The provider does not support use of the " "request parameter",
         "request_uri_not_supported": "The provider does not support use of the "
         "request_uri parameter",
         "registration_not_supported": "The provider does not support use of "
@@ -157,12 +151,13 @@ class AuthorizeError(OAuth2Error):
         # http://openid.net/specs/openid-connect-core-1_0.html#ImplicitAuthError
         hash_or_question = "#" if self.grant_type == GrantTypes.IMPLICIT else "?"
 
-        uri = "{0}{1}error={2}&error_description={3}".format(
-            self.redirect_uri, hash_or_question, self.error, description
+        uri = (
+            f"{self.redirect_uri}{hash_or_question}error="
+            f"{self.error}&error_description={description}"
         )
 
         # Add state if present.
-        uri = uri + ("&state={0}".format(self.state) if self.state else "")
+        uri = uri + (f"&state={self.state}" if self.state else "")
 
         return uri
 
@@ -210,8 +205,7 @@ class BearerTokenError(OAuth2Error):
             401,
         ),
         "insufficient_scope": (
-            "The request requires higher privileges than provided by "
-            "the access token",
+            "The request requires higher privileges than provided by the access token",
             403,
         ),
     }

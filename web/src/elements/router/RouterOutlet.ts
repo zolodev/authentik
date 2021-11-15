@@ -1,48 +1,55 @@
-import { css, CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-import { Route } from "./Route";
-import { ROUTES } from "../../routes";
-import { RouteMatch } from "./RouteMatch";
+import { CSSResult, LitElement, TemplateResult, css, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
 import AKGlobal from "../../authentik.css";
 
-import "./Router404";
 import { ROUTE_SEPARATOR } from "../../constants";
+import { Route } from "./Route";
+import { RouteMatch } from "./RouteMatch";
+import "./Router404";
 
 // Poliyfill for hashchange.newURL,
 // https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onhashchange
 window.addEventListener("load", () => {
-    if (!window.HashChangeEvent) (function () {
-        let lastURL = document.URL;
-        window.addEventListener("hashchange", function (event) {
-            Object.defineProperty(event, "oldURL", { enumerable: true, configurable: true, value: lastURL });
-            Object.defineProperty(event, "newURL", { enumerable: true, configurable: true, value: document.URL });
-            lastURL = document.URL;
-        });
-    }());
+    if (!window.HashChangeEvent)
+        (function () {
+            let lastURL = document.URL;
+            window.addEventListener("hashchange", function (event) {
+                Object.defineProperty(event, "oldURL", {
+                    enumerable: true,
+                    configurable: true,
+                    value: lastURL,
+                });
+                Object.defineProperty(event, "newURL", {
+                    enumerable: true,
+                    configurable: true,
+                    value: document.URL,
+                });
+                lastURL = document.URL;
+            });
+        })();
 });
 
 @customElement("ak-router-outlet")
 export class RouterOutlet extends LitElement {
-    @property({attribute: false})
+    @property({ attribute: false })
     current?: RouteMatch;
 
     @property()
     defaultUrl?: string;
 
+    @property({ attribute: false })
+    routes: Route[] = [];
+
     static get styles(): CSSResult[] {
-        return [AKGlobal,
+        return [
+            AKGlobal,
             css`
                 :host {
                     height: 100vh;
-                    background-color: var(--pf-global--BackgroundColor--light-300) !important;
-                }
-                @media (prefers-color-scheme: dark) {
-                    :host {
-                        background-color: var(--ak-dark-background) !important;
-                    }
+                    background-color: transparent !important;
                 }
                 *:first-child {
-                    height: 100%;
-                    display: flex;
                     flex-direction: column;
                 }
             `,
@@ -72,7 +79,7 @@ export class RouterOutlet extends LitElement {
             return;
         }
         let matchedRoute: RouteMatch | null = null;
-        ROUTES.some((route) => {
+        this.routes.some((route) => {
             const match = route.url.exec(activeUrl);
             if (match != null) {
                 matchedRoute = new RouteMatch(route);
@@ -88,7 +95,7 @@ export class RouterOutlet extends LitElement {
                 RegExp(""),
                 html`<div class="pf-c-page__main">
                     <ak-router-404 url=${activeUrl}></ak-router-404>
-                </div>`
+                </div>`,
             );
             matchedRoute = new RouteMatch(route);
             matchedRoute.arguments = route.url.exec(activeUrl)?.groups || {};

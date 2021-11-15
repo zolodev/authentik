@@ -2,42 +2,40 @@
 from datetime import timedelta
 from inspect import getmodule, stack
 from smtplib import SMTPException
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Optional, Type, Union
 from uuid import uuid4
 
 from django.conf import settings
+from django.core.validators import URLValidator
 from django.db import models
 from django.http import HttpRequest
+from django.http.request import QueryDict
 from django.utils.timezone import now
 from django.utils.translation import gettext as _
-from prometheus_client import Gauge
-from requests import RequestException, post
+from requests import RequestException
 from structlog.stdlib import get_logger
 
 from authentik import __version__
-from authentik.core.middleware import (
-    SESSION_IMPERSONATE_ORIGINAL_USER,
-    SESSION_IMPERSONATE_USER,
-)
-from authentik.core.models import ExpiringModel, Group, User
+from authentik.core.middleware import SESSION_IMPERSONATE_ORIGINAL_USER, SESSION_IMPERSONATE_USER
+from authentik.core.models import ExpiringModel, Group, PropertyMapping, User
 from authentik.events.geo import GEOIP_READER
 from authentik.events.utils import cleanse_dict, get_user, model_to_dict, sanitize_dict
 from authentik.lib.sentry import SentryIgnoredException
-from authentik.lib.utils.http import get_client_ip
+from authentik.lib.utils.http import get_client_ip, get_http_session
+from authentik.lib.utils.time import timedelta_from_string
 from authentik.policies.models import PolicyBindingModel
 from authentik.stages.email.utils import TemplateEmailMessage
+from authentik.tenants.models import Tenant
 from authentik.tenants.utils import DEFAULT_TENANT
 
 LOGGER = get_logger("authentik.events")
-GAUGE_EVENTS = Gauge(
-    "authentik_events",
-    "Events in authentik",
-    ["action", "user_username", "app", "client_ip"],
-)
+if TYPE_CHECKING:
+    from rest_framework.serializers import Serializer
 
 
 def default_event_duration():
-    """Default duration an Event is saved"""
+    """Default duration an Event is saved.
+    This is used as a fallback when no tenant is available"""
     return now() + timedelta(days=365)
 
 
@@ -143,17 +141,21 @@ class Event(ExpiringModel):
         `user` arguments optionally overrides user from requests."""
         if request:
             self.context["http_request"] = {
-                "path": request.get_full_path(),
+                "path": request.path,
                 "method": request.method,
+                "args": QueryDict(request.META.get("QUERY_STRING", "")),
             }
         if hasattr(request, "tenant"):
-            self.tenant = sanitize_dict(model_to_dict(request.tenant))
+            tenant: Tenant = request.tenant
+            # Because self.created only gets set on save, we can't use it's value here
+            # hence we set self.created to now and then use it
+            self.created = now()
+            self.expires = self.created + timedelta_from_string(tenant.event_retention)
+            self.tenant = sanitize_dict(model_to_dict(tenant))
         if hasattr(request, "user"):
             original_user = None
             if hasattr(request, "session"):
-                original_user = request.session.get(
-                    SESSION_IMPERSONATE_ORIGINAL_USER, None
-                )
+                original_user = request.session.get(SESSION_IMPERSONATE_ORIGINAL_USER, None)
             self.user = get_user(request.user, original_user)
         if user:
             self.user = get_user(user)
@@ -161,9 +163,7 @@ class Event(ExpiringModel):
         if hasattr(request, "session"):
             if SESSION_IMPERSONATE_ORIGINAL_USER in request.session:
                 self.user = get_user(request.session[SESSION_IMPERSONATE_ORIGINAL_USER])
-                self.user["on_behalf_of"] = get_user(
-                    request.session[SESSION_IMPERSONATE_USER]
-                )
+                self.user["on_behalf_of"] = get_user(request.session[SESSION_IMPERSONATE_USER])
         # User 255.255.255.255 as fallback if IP cannot be determined
         self.client_ip = get_client_ip(request)
         # Apply GeoIP Data, when enabled
@@ -181,14 +181,6 @@ class Event(ExpiringModel):
             return
         self.context["geo"] = city
 
-    def _set_prom_metrics(self):
-        GAUGE_EVENTS.labels(
-            action=self.action,
-            user_username=self.user.get("username"),
-            app=self.app,
-            client_ip=self.client_ip,
-        ).set(self.created.timestamp())
-
     def save(self, *args, **kwargs):
         if self._state.adding:
             LOGGER.debug(
@@ -199,7 +191,6 @@ class Event(ExpiringModel):
                 user=self.user,
             )
         super().save(*args, **kwargs)
-        self._set_prom_metrics()
 
     @property
     def summary(self) -> str:
@@ -233,7 +224,10 @@ class NotificationTransport(models.Model):
     name = models.TextField(unique=True)
     mode = models.TextField(choices=TransportMode.choices)
 
-    webhook_url = models.TextField(blank=True)
+    webhook_url = models.TextField(blank=True, validators=[URLValidator()])
+    webhook_mapping = models.ForeignKey(
+        "NotificationWebhookMapping", on_delete=models.SET_DEFAULT, null=True, default=None
+    )
     send_once = models.BooleanField(
         default=False,
         help_text=_(
@@ -253,15 +247,22 @@ class NotificationTransport(models.Model):
 
     def send_webhook(self, notification: "Notification") -> list[str]:
         """Send notification to generic webhook"""
+        default_body = {
+            "body": notification.body,
+            "severity": notification.severity,
+            "user_email": notification.user.email,
+            "user_username": notification.user.username,
+        }
+        if self.webhook_mapping:
+            default_body = self.webhook_mapping.evaluate(
+                user=notification.user,
+                request=None,
+                notification=notification,
+            )
         try:
-            response = post(
+            response = get_http_session().post(
                 self.webhook_url,
-                json={
-                    "body": notification.body,
-                    "severity": notification.severity,
-                    "user_email": notification.user.email,
-                    "user_username": notification.user.username,
-                },
+                json=default_body,
             )
             response.raise_for_status()
         except RequestException as exc:
@@ -311,7 +312,7 @@ class NotificationTransport(models.Model):
         if notification.event:
             body["attachments"][0]["title"] = notification.event.action
         try:
-            response = post(self.webhook_url, json=body)
+            response = get_http_session().post(self.webhook_url, json=body)
             response.raise_for_status()
         except RequestException as exc:
             text = exc.response.text if exc.response else str(exc)
@@ -406,9 +407,7 @@ class NotificationRule(PolicyBindingModel):
     severity = models.TextField(
         choices=NotificationSeverity.choices,
         default=NotificationSeverity.NOTICE,
-        help_text=_(
-            "Controls which severity level the created notifications will have."
-        ),
+        help_text=_("Controls which severity level the created notifications will have."),
     )
     group = models.ForeignKey(
         Group,
@@ -430,3 +429,25 @@ class NotificationRule(PolicyBindingModel):
 
         verbose_name = _("Notification Rule")
         verbose_name_plural = _("Notification Rules")
+
+
+class NotificationWebhookMapping(PropertyMapping):
+    """Modify the schema and layout of the webhook being sent"""
+
+    @property
+    def component(self) -> str:
+        return "ak-property-mapping-notification-form"
+
+    @property
+    def serializer(self) -> Type["Serializer"]:
+        from authentik.events.api.notification_mapping import NotificationWebhookMappingSerializer
+
+        return NotificationWebhookMappingSerializer
+
+    def __str__(self):
+        return f"Notification Webhook Mapping {self.name}"
+
+    class Meta:
+
+        verbose_name = _("Notification Webhook Mapping")
+        verbose_name_plural = _("Notification Webhook Mappings")

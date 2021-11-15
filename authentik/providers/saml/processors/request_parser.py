@@ -59,14 +59,20 @@ class AuthNRequestParser:
     ) -> AuthNRequest:
         root = ElementTree.fromstring(decoded_xml)
 
-        request_acs_url = root.attrib["AssertionConsumerServiceURL"]
+        # http://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf
+        # `AssertionConsumerServiceURL` can be omitted, and we should fallback to the
+        # default ACS URL
+        if "AssertionConsumerServiceURL" not in root.attrib:
+            request_acs_url = self.provider.acs_url.lower()
+        else:
+            request_acs_url = root.attrib["AssertionConsumerServiceURL"]
 
         if self.provider.acs_url.lower() != request_acs_url.lower():
             msg = (
                 f"ACS URL of {request_acs_url} doesn't match Provider "
                 f"ACS URL of {self.provider.acs_url}."
             )
-            LOGGER.info(msg)
+            LOGGER.warning(msg)
             raise CannotHandleAssertion(msg)
 
         auth_n_request = AuthNRequest(id=root.attrib["ID"], relay_state=relay_state)
@@ -81,9 +87,7 @@ class AuthNRequestParser:
 
         return auth_n_request
 
-    def parse(
-        self, saml_request: str, relay_state: Optional[str] = None
-    ) -> AuthNRequest:
+    def parse(self, saml_request: str, relay_state: Optional[str] = None) -> AuthNRequest:
         """Validate and parse raw request with enveloped signautre."""
         try:
             decoded_xml = b64decode(saml_request.encode())
@@ -94,9 +98,7 @@ class AuthNRequestParser:
 
         root = etree.fromstring(decoded_xml)  # nosec
         xmlsec.tree.add_ids(root, ["ID"])
-        signature_nodes = root.xpath(
-            "/samlp:AuthnRequest/ds:Signature", namespaces=NS_MAP
-        )
+        signature_nodes = root.xpath("/samlp:AuthnRequest/ds:Signature", namespaces=NS_MAP)
         # No signatures, no verifier configured -> decode xml directly
         if len(signature_nodes) < 1 and not verifier:
             return self._parse_xml(decoded_xml, relay_state)

@@ -1,15 +1,20 @@
 import { t } from "@lingui/macro";
-import { CSSResult, customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../api/Client";
-import { TablePage } from "../../elements/table/TablePage";
+
+import { CSSResult, TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
 import PFDescriptionList from "@patternfly/patternfly/components/DescriptionList/description-list.css";
 
-import "../../elements/buttons/SpinnerButton";
-import "../../elements/buttons/ActionButton";
-import { TableColumn } from "../../elements/table/Table";
-import { AdminApi, Task, StatusEnum } from "authentik-api";
+import { AdminApi, StatusEnum, Task } from "@goauthentik/api";
+
+import { AKResponse } from "../../api/Client";
 import { DEFAULT_CONFIG } from "../../api/Config";
+import { EVENT_REFRESH } from "../../constants";
 import { PFColor } from "../../elements/Label";
+import "../../elements/buttons/ActionButton";
+import "../../elements/buttons/SpinnerButton";
+import { TableColumn } from "../../elements/table/Table";
+import { TablePage } from "../../elements/table/TablePage";
 
 @customElement("ak-system-task-list")
 export class SystemTaskListPage extends TablePage<Task> {
@@ -35,7 +40,7 @@ export class SystemTaskListPage extends TablePage<Task> {
         return super.styles.concat(PFDescriptionList);
     }
 
-    apiEndpoint(page: number): Promise<AKResponse<Task>> {
+    async apiEndpoint(page: number): Promise<AKResponse<Task>> {
         return new AdminApi(DEFAULT_CONFIG).adminSystemTasksList().then((tasks) => {
             return {
                 pagination: {
@@ -56,7 +61,7 @@ export class SystemTaskListPage extends TablePage<Task> {
             new TableColumn(t`Description`),
             new TableColumn(t`Last run`),
             new TableColumn(t`Status`),
-            new TableColumn(""),
+            new TableColumn(t`Actions`),
         ];
     }
 
@@ -74,27 +79,26 @@ export class SystemTaskListPage extends TablePage<Task> {
     }
 
     renderExpanded(item: Task): TemplateResult {
-        return html`
-        <td role="cell" colspan="3">
-            <div class="pf-c-table__expandable-row-content">
-                <dl class="pf-c-description-list pf-m-horizontal">
-                    <div class="pf-c-description-list__group">
-                        <dt class="pf-c-description-list__term">
-                            <span class="pf-c-description-list__text">${t`Messages`}</span>
-                        </dt>
-                        <dd class="pf-c-description-list__description">
-                            <div class="pf-c-description-list__text">
-                                ${item.messages.map(m => {
-                                    return html`<li>${m}</li>`;
-                                })}
-                            </div>
-                        </dd>
-                    </div>
-                </dl>
-            </div>
-        </td>
-        <td></td>
-        <td></td>`;
+        return html` <td role="cell" colspan="3">
+                <div class="pf-c-table__expandable-row-content">
+                    <dl class="pf-c-description-list pf-m-horizontal">
+                        <div class="pf-c-description-list__group">
+                            <dt class="pf-c-description-list__term">
+                                <span class="pf-c-description-list__text">${t`Messages`}</span>
+                            </dt>
+                            <dd class="pf-c-description-list__description">
+                                <div class="pf-c-description-list__text">
+                                    ${item.messages.map((m) => {
+                                        return html`<li>${m}</li>`;
+                                    })}
+                                </div>
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </td>
+            <td></td>
+            <td></td>`;
     }
 
     row(item: Task): TemplateResult[] {
@@ -104,14 +108,24 @@ export class SystemTaskListPage extends TablePage<Task> {
             html`${item.taskFinishTimestamp.toLocaleString()}`,
             this.taskStatus(item),
             html`<ak-action-button
+                class="pf-m-plain"
                 .apiRequest=${() => {
-                    return new AdminApi(DEFAULT_CONFIG).adminSystemTasksRetryCreate({
-                        id: item.taskName,
-                    });
-                }}>
-                ${t`Retry Task`}
+                    return new AdminApi(DEFAULT_CONFIG)
+                        .adminSystemTasksRetryCreate({
+                            id: item.taskName,
+                        })
+                        .then(() => {
+                            this.dispatchEvent(
+                                new CustomEvent(EVENT_REFRESH, {
+                                    bubbles: true,
+                                    composed: true,
+                                }),
+                            );
+                        });
+                }}
+            >
+                <i class="fas fa-sync-alt" aria-hidden="true"></i>
             </ak-action-button>`,
         ];
     }
-
 }

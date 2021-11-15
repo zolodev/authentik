@@ -1,5 +1,6 @@
 """Identification stage logic"""
 from dataclasses import asdict
+from random import SystemRandom
 from time import sleep
 from typing import Any, Optional
 
@@ -15,13 +16,16 @@ from structlog.stdlib import get_logger
 
 from authentik.core.api.utils import PassiveSerializer
 from authentik.core.models import Application, Source, User
-from authentik.flows.challenge import Challenge, ChallengeResponse, ChallengeTypes
-from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
-from authentik.flows.stage import (
-    PLAN_CONTEXT_PENDING_USER_IDENTIFIER,
-    ChallengeStageView,
+from authentik.flows.challenge import (
+    Challenge,
+    ChallengeResponse,
+    ChallengeTypes,
+    RedirectChallenge,
 )
-from authentik.flows.views import SESSION_KEY_APPLICATION_PRE, challenge_types
+from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
+from authentik.flows.stage import PLAN_CONTEXT_PENDING_USER_IDENTIFIER, ChallengeStageView
+from authentik.flows.views.executor import SESSION_KEY_APPLICATION_PRE
+from authentik.sources.plex.models import PlexAuthenticationChallenge
 from authentik.stages.identification.models import IdentificationStage
 from authentik.stages.identification.signals import identification_failed
 from authentik.stages.password.stage import authenticate
@@ -31,8 +35,11 @@ LOGGER = get_logger()
 
 @extend_schema_field(
     PolymorphicProxySerializer(
-        component_name="ChallengeTypes",
-        serializers=challenge_types(),
+        component_name="LoginChallengeTypes",
+        serializers={
+            RedirectChallenge().fields["component"].default: RedirectChallenge,
+            PlexAuthenticationChallenge().fields["component"].default: PlexAuthenticationChallenge,
+        },
         resource_type_field_name="component",
     )
 )
@@ -60,6 +67,7 @@ class IdentificationChallenge(Challenge):
     recovery_url = CharField(required=False)
     primary_action = CharField()
     sources = LoginSourceSerializer(many=True, required=False)
+    show_source_labels = BooleanField()
 
     component = CharField(default="ak-stage-identification")
 
@@ -80,11 +88,10 @@ class IdentificationChallengeResponse(ChallengeResponse):
 
         pre_user = self.stage.get_user(uid_field)
         if not pre_user:
-            sleep(0.150)
+            # Sleep a random time (between 90 and 210ms) to "prevent" user enumeration attacks
+            sleep(0.30 * SystemRandom().randint(3, 7))
             LOGGER.debug("invalid_login", identifier=uid_field)
-            identification_failed.send(
-                sender=self, request=self.stage.request, uid_field=uid_field
-            )
+            identification_failed.send(sender=self, request=self.stage.request, uid_field=uid_field)
             # We set the pending_user even on failure so it's part of the context, even
             # when the input is invalid
             # This is so its part of the current flow plan, and on flow restart can be kept, and
@@ -94,16 +101,16 @@ class IdentificationChallengeResponse(ChallengeResponse):
                 email=uid_field,
             )
             if not current_stage.show_matched_user:
-                self.stage.executor.plan.context[
-                    PLAN_CONTEXT_PENDING_USER_IDENTIFIER
-                ] = uid_field
+                self.stage.executor.plan.context[PLAN_CONTEXT_PENDING_USER_IDENTIFIER] = uid_field
             raise ValidationError("Failed to authenticate.")
         self.pre_user = pre_user
         if not current_stage.password_stage:
             # No password stage select, don't validate the password
             return attrs
 
-        password = attrs["password"]
+        password = attrs.get("password", None)
+        if not password:
+            LOGGER.warning("Password not set for ident+auth attempt")
         try:
             user = authenticate(
                 self.stage.request,
@@ -139,6 +146,9 @@ class IdentificationStageView(ChallengeStageView):
             else:
                 model_field += "__exact"
             query |= Q(**{model_field: uid_value})
+        if not query:
+            LOGGER.debug("Empty user query", query=query)
+            return None
         users = User.objects.filter(query, is_active=True)
         if users.exists():
             LOGGER.debug("Found user", user=users.first(), query=query)
@@ -154,6 +164,7 @@ class IdentificationStageView(ChallengeStageView):
                 "component": "ak-stage-identification",
                 "user_fields": current_stage.user_fields,
                 "password_fields": bool(current_stage.password_stage),
+                "show_source_labels": current_stage.show_source_labels,
             }
         )
         # If the user has been redirected to us whilst trying to access an
@@ -177,9 +188,7 @@ class IdentificationStageView(ChallengeStageView):
         # Check all enabled source, add them if they have a UI Login button.
         ui_sources = []
         sources: list[Source] = (
-            current_stage.sources.filter(enabled=True)
-            .order_by("name")
-            .select_subclasses()
+            current_stage.sources.filter(enabled=True).order_by("name").select_subclasses()
         )
         for source in sources:
             ui_login_button = source.ui_login_button
@@ -190,9 +199,7 @@ class IdentificationStageView(ChallengeStageView):
         challenge.initial_data["sources"] = ui_sources
         return challenge
 
-    def challenge_valid(
-        self, response: IdentificationChallengeResponse
-    ) -> HttpResponse:
+    def challenge_valid(self, response: IdentificationChallengeResponse) -> HttpResponse:
         self.executor.plan.context[PLAN_CONTEXT_PENDING_USER] = response.pre_user
         current_stage: IdentificationStage = self.executor.current_stage
         if not current_stage.show_matched_user:

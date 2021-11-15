@@ -1,10 +1,13 @@
 """Sync LDAP Users and groups into authentik"""
 from typing import Any
 
+from deepmerge import always_merger
+from django.db.models.base import Model
 from django.db.models.query import QuerySet
 from structlog.stdlib import BoundLogger, get_logger
 
 from authentik.core.exceptions import PropertyMappingExpressionException
+from authentik.events.models import Event, EventAction
 from authentik.sources.ldap.auth import LDAP_DISTINGUISHED_NAME
 from authentik.sources.ldap.models import LDAPPropertyMapping, LDAPSource
 
@@ -16,10 +19,17 @@ class BaseLDAPSynchronizer:
 
     _source: LDAPSource
     _logger: BoundLogger
+    _messages: list[str]
 
     def __init__(self, source: LDAPSource):
         self._source = source
+        self._messages = []
         self._logger = get_logger().bind(source=source, syncer=self.__class__.__name__)
+
+    @property
+    def messages(self) -> list[str]:
+        """Get all UI messages"""
+        return self._messages
 
     @property
     def base_dn_users(self) -> str:
@@ -35,6 +45,11 @@ class BaseLDAPSynchronizer:
             return f"{self._source.additional_group_dn},{self._source.base_dn}"
         return self._source.base_dn
 
+    def message(self, *args, **kwargs):
+        """Add message that is later added to the System Task and shown to the user"""
+        self._messages.append(" ".join(args))
+        self._logger.warning(*args, **kwargs)
+
     def sync(self) -> int:
         """Sync function, implemented in subclass"""
         raise NotImplementedError()
@@ -49,9 +64,7 @@ class BaseLDAPSynchronizer:
 
     def build_user_properties(self, user_dn: str, **kwargs) -> dict[str, Any]:
         """Build attributes for User object based on property mappings."""
-        return self._build_object_properties(
-            user_dn, self._source.property_mappings, **kwargs
-        )
+        return self._build_object_properties(user_dn, self._source.property_mappings, **kwargs)
 
     def build_group_properties(self, group_dn: str, **kwargs) -> dict[str, Any]:
         """Build attributes for Group object based on property mappings."""
@@ -68,24 +81,25 @@ class BaseLDAPSynchronizer:
                 continue
             mapping: LDAPPropertyMapping
             try:
-                value = mapping.evaluate(
-                    user=None, request=None, ldap=kwargs, dn=object_dn
-                )
+                value = mapping.evaluate(user=None, request=None, ldap=kwargs, dn=object_dn)
                 if value is None:
+                    continue
+                if isinstance(value, (bytes)):
                     continue
                 object_field = mapping.object_field
                 if object_field.startswith("attributes."):
                     # Because returning a list might desired, we can't
                     # rely on self._flatten here. Instead, just save the result as-is
-                    properties["attributes"][
-                        object_field.replace("attributes.", "")
-                    ] = value
+                    properties["attributes"][object_field.replace("attributes.", "")] = value
                 else:
                     properties[object_field] = self._flatten(value)
             except PropertyMappingExpressionException as exc:
-                self._logger.warning(
-                    "Mapping failed to evaluate", exc=exc, mapping=mapping
-                )
+                Event.new(
+                    EventAction.CONFIGURATION_ERROR,
+                    message=f"Failed to evaluate property-mapping: {str(exc)}",
+                    mapping=mapping,
+                ).save()
+                self._logger.warning("Mapping failed to evaluate", exc=exc, mapping=mapping)
                 continue
         if self._source.object_uniqueness_field in kwargs:
             properties["attributes"][LDAP_UNIQUENESS] = self._flatten(
@@ -93,3 +107,24 @@ class BaseLDAPSynchronizer:
             )
         properties["attributes"][LDAP_DISTINGUISHED_NAME] = object_dn
         return properties
+
+    def update_or_create_attributes(
+        self,
+        obj: type[Model],
+        query: dict[str, Any],
+        data: dict[str, Any],
+    ) -> tuple[Model, bool]:
+        """Same as django's update_or_create but correctly update attributes by merging dicts"""
+        instance = obj.objects.filter(**query).first()
+        if not instance:
+            return (obj.objects.create(**data), True)
+        for key, value in data.items():
+            if key == "attributes":
+                continue
+            setattr(instance, key, value)
+        final_atttributes = {}
+        always_merger.merge(final_atttributes, instance.attributes)
+        always_merger.merge(final_atttributes, data.get("attributes", {}))
+        instance.attributes = final_atttributes
+        instance.save()
+        return (instance, False)

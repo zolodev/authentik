@@ -16,6 +16,7 @@ from authentik.outposts.models import DockerServiceConnection, Outpost, OutpostT
 from authentik.outposts.tasks import outpost_local_connection
 from authentik.providers.proxy.controllers.docker import DockerController
 from authentik.providers.proxy.models import ProxyProvider
+from tests.e2e.utils import get_docker_tag
 
 
 class TestProxyDocker(TestCase):
@@ -63,14 +64,14 @@ class TestProxyDocker(TestCase):
         authentication_kp = CertificateKeyPair.objects.create(
             name="docker-authentication",
             # pylint: disable=consider-using-with
-            certificate_data=open(f"{self.ssl_folder}/client/cert.pem").read(),
+            certificate_data=open(f"{self.ssl_folder}/client/cert.pem", encoding="utf8").read(),
             # pylint: disable=consider-using-with
-            key_data=open(f"{self.ssl_folder}/client/key.pem").read(),
+            key_data=open(f"{self.ssl_folder}/client/key.pem", encoding="utf8").read(),
         )
         verification_kp = CertificateKeyPair.objects.create(
             name="docker-verification",
             # pylint: disable=consider-using-with
-            certificate_data=open(f"{self.ssl_folder}/client/ca.pem").read(),
+            certificate_data=open(f"{self.ssl_folder}/client/ca.pem", encoding="utf8").read(),
         )
         self.service_connection = DockerServiceConnection.objects.create(
             url="https://localhost:2376",
@@ -107,5 +108,5 @@ class TestProxyDocker(TestCase):
         self.assertEqual(compose["version"], "3.5")
         self.assertEqual(
             compose["services"]["authentik_proxy"]["image"],
-            "beryju.org/authentik/outpost-proxy:gh-master",
+            f"goauthentik.io/dev-proxy:{get_docker_tag()}",
         )

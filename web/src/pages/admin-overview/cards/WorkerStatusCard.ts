@@ -1,12 +1,15 @@
 import { t } from "@lingui/macro";
-import { customElement } from "lit-element";
-import { AdminApi } from "authentik-api";
+
+import { html } from "lit";
+import { customElement } from "lit/decorators.js";
+
+import { AdminApi } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../../api/Config";
 import { AdminStatus, AdminStatusCard } from "./AdminStatusCard";
 
 @customElement("ak-admin-status-card-workers")
 export class WorkersStatusCard extends AdminStatusCard<number> {
-
     getPrimaryValue(): Promise<number> {
         return new AdminApi(DEFAULT_CONFIG).adminWorkersRetrieve().then((workers) => {
             return workers.count;
@@ -17,13 +20,12 @@ export class WorkersStatusCard extends AdminStatusCard<number> {
         if (value < 1) {
             return Promise.resolve<AdminStatus>({
                 icon: "fa fa-times-circle pf-m-danger",
-                message: t`No workers connected. Background tasks will not run.`,
+                message: html`${t`No workers connected. Background tasks will not run.`}`,
             });
         } else {
             return Promise.resolve<AdminStatus>({
-                icon: "fa fa-check-circle pf-m-success"
+                icon: "fa fa-check-circle pf-m-success",
             });
         }
     }
-
 }

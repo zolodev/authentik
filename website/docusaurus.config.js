@@ -39,7 +39,7 @@ module.exports = {
                     position: "right",
                 },
                 {
-                    href: "https://discord.gg/jg33eMhnj6",
+                    href: "https://goauthentik.io/discord",
                     label: "Discord",
                     position: "right",
                 },
@@ -73,7 +73,7 @@ module.exports = {
                         },
                         {
                             label: "Discord",
-                            href: "https://discord.gg/jg33eMhnj6",
+                            href: "https://goauthentik.io/discord",
                         },
                     ],
                 },
@@ -115,4 +115,33 @@ module.exports = {
             },
         ],
     ],
+    ssrTemplate: `<!DOCTYPE html>
+<html <%~ it.htmlAttributes %>>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=0.86, maximum-scale=3.0, minimum-scale=0.86">
+    <meta name="generator" content="Docusaurus v<%= it.version %>">
+    <script async defer data-domain="goauthentik.io" src="https://goauthentik.io/js/script.js"></script>
+    <%~ it.headTags %>
+    <% it.metaAttributes.forEach((metaAttribute) => { %>
+      <%~ metaAttribute %>
+    <% }); %>
+    <% it.stylesheets.forEach((stylesheet) => { %>
+      <link rel="stylesheet" href="<%= it.baseUrl %><%= stylesheet %>" />
+    <% }); %>
+    <% it.scripts.forEach((script) => { %>
+      <link rel="preload" href="<%= it.baseUrl %><%= script %>" as="script">
+    <% }); %>
+  </head>
+  <body <%~ it.bodyAttributes %> itemscope="" itemtype="http://schema.org/Organization">
+    <%~ it.preBodyTags %>
+    <div id="__docusaurus">
+      <%~ it.appHtml %>
+    </div>
+    <% it.scripts.forEach((script) => { %>
+      <script src="<%= it.baseUrl %><%= script %>"></script>
+    <% }); %>
+    <%~ it.postBodyTags %>
+  </body>
+</html>`
 };

@@ -2,22 +2,43 @@ package ldap
 
 import (
 	"net"
-	"strings"
 
 	"github.com/nmcclain/ldap"
+	"github.com/prometheus/client_golang/prometheus"
+	"goauthentik.io/internal/outpost/ldap/bind"
+	"goauthentik.io/internal/outpost/ldap/metrics"
+	"goauthentik.io/internal/utils"
 )
 
 func (ls *LDAPServer) Bind(bindDN string, bindPW string, conn net.Conn) (ldap.LDAPResultCode, error) {
-	bindDN = strings.ToLower(bindDN)
-	ls.log.WithField("bindDN", bindDN).Info("bind")
+	req, span := bind.NewRequest(bindDN, bindPW, conn)
+
+	defer func() {
+		span.Finish()
+		metrics.Requests.With(prometheus.Labels{
+			"outpost_name": ls.ac.Outpost.Name,
+			"type":         "bind",
+			"filter":       "",
+			"dn":           req.BindDN,
+			"client":       req.RemoteAddr(),
+		}).Observe(float64(span.EndTime.Sub(span.StartTime)))
+		req.Log().WithField("took-ms", span.EndTime.Sub(span.StartTime).Milliseconds()).Info("Bind request")
+	}()
 	for _, instance := range ls.providers {
-		username, err := instance.getUsername(bindDN)
+		username, err := instance.binder.GetUsername(bindDN)
 		if err == nil {
-			return instance.Bind(username, bindDN, bindPW, conn)
+			return instance.binder.Bind(username, req)
 		} else {
-			ls.log.WithError(err).Debug("Username not for instance")
+			req.Log().WithError(err).Debug("Username not for instance")
 		}
 	}
-	ls.log.WithField("bindDN", bindDN).WithField("request", "bind").Warning("No provider found for request")
+	req.Log().WithField("request", "bind").Warning("No provider found for request")
+	metrics.RequestsRejected.With(prometheus.Labels{
+		"outpost_name": ls.ac.Outpost.Name,
+		"type":         "bind",
+		"reason":       "no_provider",
+		"dn":           bindDN,
+		"client":       utils.GetIP(conn.RemoteAddr()),
+	}).Inc()
 	return ldap.LDAPResultOperationsError, nil
 }

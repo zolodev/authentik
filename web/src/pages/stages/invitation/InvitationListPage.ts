@@ -1,20 +1,29 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../../api/Client";
-import { TablePage } from "../../../elements/table/TablePage";
 
+import { CSSResult, TemplateResult, html } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import PFBanner from "@patternfly/patternfly/components/Banner/banner.css";
+
+import { Invitation, StagesApi } from "@goauthentik/api";
+
+import { AKResponse } from "../../../api/Client";
+import { DEFAULT_CONFIG } from "../../../api/Config";
+import { uiConfig } from "../../../common/config";
 import "../../../elements/buttons/ModalButton";
 import "../../../elements/buttons/SpinnerButton";
-import "../../../elements/forms/DeleteForm";
+import "../../../elements/forms/DeleteBulkForm";
 import "../../../elements/forms/ModalForm";
-import "./InvitationForm";
 import { TableColumn } from "../../../elements/table/Table";
-import { PAGE_SIZE } from "../../../constants";
-import { Invitation, StagesApi } from "authentik-api";
-import { DEFAULT_CONFIG } from "../../../api/Config";
+import { TablePage } from "../../../elements/table/TablePage";
+import "./InvitationForm";
+import "./InvitationListLink";
 
 @customElement("ak-stage-invitation-list")
 export class InvitationListPage extends TablePage<Invitation> {
+    expandable = true;
+
     searchEnabled(): boolean {
         return true;
     }
@@ -28,14 +37,28 @@ export class InvitationListPage extends TablePage<Invitation> {
         return "pf-icon pf-icon-migration";
     }
 
+    static get styles(): CSSResult[] {
+        return super.styles.concat(PFBanner);
+    }
+
+    checkbox = true;
+
     @property()
     order = "expires";
 
-    apiEndpoint(page: number): Promise<AKResponse<Invitation>> {
+    @state()
+    invitationStageExists = false;
+
+    async apiEndpoint(page: number): Promise<AKResponse<Invitation>> {
+        const stages = await new StagesApi(DEFAULT_CONFIG).stagesInvitationStagesList({
+            noFlows: false,
+        });
+        this.invitationStageExists = stages.pagination.count > 0;
+        this.expandable = this.invitationStageExists;
         return new StagesApi(DEFAULT_CONFIG).stagesInvitationInvitationsList({
             ordering: this.order,
             page: page,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             search: this.search || "",
         });
     }
@@ -45,52 +68,80 @@ export class InvitationListPage extends TablePage<Invitation> {
             new TableColumn(t`ID`, "pk"),
             new TableColumn(t`Created by`, "created_by"),
             new TableColumn(t`Expiry`),
-            new TableColumn(""),
         ];
+    }
+
+    renderToolbarSelected(): TemplateResult {
+        const disabled = this.selectedElements.length < 1;
+        return html`<ak-forms-delete-bulk
+            objectLabel=${t`Invitation(s)`}
+            .objects=${this.selectedElements}
+            .usedBy=${(item: Invitation) => {
+                return new StagesApi(DEFAULT_CONFIG).stagesInvitationInvitationsUsedByList({
+                    inviteUuid: item.pk,
+                });
+            }}
+            .delete=${(item: Invitation) => {
+                return new StagesApi(DEFAULT_CONFIG).stagesInvitationInvitationsDestroy({
+                    inviteUuid: item.pk,
+                });
+            }}
+        >
+            <button ?disabled=${disabled} slot="trigger" class="pf-c-button pf-m-danger">
+                ${t`Delete`}
+            </button>
+        </ak-forms-delete-bulk>`;
     }
 
     row(item: Invitation): TemplateResult[] {
         return [
             html`${item.pk}`,
             html`${item.createdBy?.username}`,
-            html`${item.expires?.toLocaleString()}`,
-            html`
-            <ak-forms-delete
-                .obj=${item}
-                objectLabel=${t`Invitation`}
-                .usedBy=${() => {
-                    return new StagesApi(DEFAULT_CONFIG).stagesInvitationInvitationsUsedByList({
-                        inviteUuid: item.pk
-                    });
-                }}
-                .delete=${() => {
-                    return new StagesApi(DEFAULT_CONFIG).stagesInvitationInvitationsDestroy({
-                        inviteUuid: item.pk
-                    });
-                }}>
-                <button slot="trigger" class="pf-c-button pf-m-danger">
-                    ${t`Delete`}
-                </button>
-            </ak-forms-delete>`,
+            html`${item.expires?.toLocaleString() || t`-`}`,
         ];
+    }
+
+    renderExpanded(item: Invitation): TemplateResult {
+        return html` <td role="cell" colspan="3">
+                <div class="pf-c-table__expandable-row-content">
+                    <ak-stage-invitation-list-link
+                        invitation=${item.pk}
+                    ></ak-stage-invitation-list-link>
+                </div>
+            </td>
+            <td></td>
+            <td></td>
+            <td></td>`;
     }
 
     renderToolbar(): TemplateResult {
         return html`
-        <ak-forms-modal>
-            <span slot="submit">
-                ${t`Create`}
-            </span>
-            <span slot="header">
-                ${t`Create Invitation`}
-            </span>
-            <ak-invitation-form slot="form">
-            </ak-invitation-form>
-            <button slot="trigger" class="pf-c-button pf-m-primary">
-                ${t`Create`}
-            </button>
-        </ak-forms-modal>
-        ${super.renderToolbar()}
+            <ak-forms-modal>
+                <span slot="submit"> ${t`Create`} </span>
+                <span slot="header"> ${t`Create Invitation`} </span>
+                <ak-invitation-form slot="form"> </ak-invitation-form>
+                <button slot="trigger" class="pf-c-button pf-m-primary">${t`Create`}</button>
+            </ak-forms-modal>
+            ${super.renderToolbar()}
         `;
+    }
+
+    render(): TemplateResult {
+        return html`<ak-page-header
+                icon=${this.pageIcon()}
+                header=${this.pageTitle()}
+                description=${ifDefined(this.pageDescription())}
+            >
+            </ak-page-header>
+            ${this.invitationStageExists
+                ? html``
+                : html`
+                      <div class="pf-c-banner pf-m-warning">
+                          ${t`Warning: No invitation stage is bound to any flow. Invitations will not work as expected.`}
+                      </div>
+                  `}
+            <section class="pf-c-page__main-section pf-m-no-padding-mobile">
+                <div class="pf-c-card">${this.renderTable()}</div>
+            </section>`;
     }
 }

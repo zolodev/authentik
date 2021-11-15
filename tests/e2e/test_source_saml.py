@@ -97,23 +97,19 @@ class TestSourceSAML(SeleniumTestCase):
         }
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0009_source_flows")
     @apply_migration("authentik_crypto", "0002_create_self_signed_kp")
-    @apply_migration(
-        "authentik_sources_saml", "0010_samlsource_pre_authentication_flow"
-    )
+    @apply_migration("authentik_sources_saml", "0010_samlsource_pre_authentication_flow")
     @object_manager
     def test_idp_redirect(self):
         """test SAML Source With redirect binding"""
         # Bootstrap all needed objects
         authentication_flow = Flow.objects.get(slug="default-source-authentication")
         enrollment_flow = Flow.objects.get(slug="default-source-enrollment")
-        pre_authentication_flow = Flow.objects.get(
-            slug="default-source-pre-authentication"
-        )
+        pre_authentication_flow = Flow.objects.get(slug="default-source-pre-authentication")
         keypair = CertificateKeyPair.objects.create(
             name="test-idp-cert",
             certificate_data=IDP_CERT,
@@ -138,9 +134,7 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.get(self.live_server_url)
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
-        identification_stage = self.get_shadow_root(
-            "ak-stage-identification", flow_executor
-        )
+        identification_stage = self.get_shadow_root("ak-stage-identification", flow_executor)
         wait = WebDriverWait(identification_stage, self.wait_timeout)
 
         wait.until(
@@ -159,33 +153,30 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.find_element(By.ID, "password").send_keys(Keys.ENTER)
 
         # Wait until we're logged in
-        self.wait_for_url(self.if_admin_url("/library"))
-        self.driver.get(self.if_admin_url("/user"))
+        self.wait_for_url(self.if_user_url("/library"))
+        self.driver.get(self.if_user_url("/settings"))
 
         self.assert_user(
             User.objects.exclude(username="akadmin")
+            .exclude(username__startswith="ak-outpost")
             .exclude(pk=get_anonymous_user().pk)
             .first()
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0009_source_flows")
     @apply_migration("authentik_crypto", "0002_create_self_signed_kp")
-    @apply_migration(
-        "authentik_sources_saml", "0010_samlsource_pre_authentication_flow"
-    )
+    @apply_migration("authentik_sources_saml", "0010_samlsource_pre_authentication_flow")
     @object_manager
     def test_idp_post(self):
         """test SAML Source With post binding"""
         # Bootstrap all needed objects
         authentication_flow = Flow.objects.get(slug="default-source-authentication")
         enrollment_flow = Flow.objects.get(slug="default-source-enrollment")
-        pre_authentication_flow = Flow.objects.get(
-            slug="default-source-pre-authentication"
-        )
+        pre_authentication_flow = Flow.objects.get(slug="default-source-pre-authentication")
         keypair = CertificateKeyPair.objects.create(
             name="test-idp-cert",
             certificate_data=IDP_CERT,
@@ -210,9 +201,7 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.get(self.live_server_url)
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
-        identification_stage = self.get_shadow_root(
-            "ak-stage-identification", flow_executor
-        )
+        identification_stage = self.get_shadow_root("ak-stage-identification", flow_executor)
         wait = WebDriverWait(identification_stage, self.wait_timeout)
 
         wait.until(
@@ -244,33 +233,30 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.find_element(By.ID, "password").send_keys(Keys.ENTER)
 
         # Wait until we're logged in
-        self.wait_for_url(self.if_admin_url("/library"))
-        self.driver.get(self.if_admin_url("/user"))
+        self.wait_for_url(self.if_user_url("/library"))
+        self.driver.get(self.if_user_url("/settings"))
 
         self.assert_user(
             User.objects.exclude(username="akadmin")
+            .exclude(username__startswith="ak-outpost")
             .exclude(pk=get_anonymous_user().pk)
             .first()
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0009_source_flows")
     @apply_migration("authentik_crypto", "0002_create_self_signed_kp")
-    @apply_migration(
-        "authentik_sources_saml", "0010_samlsource_pre_authentication_flow"
-    )
+    @apply_migration("authentik_sources_saml", "0010_samlsource_pre_authentication_flow")
     @object_manager
     def test_idp_post_auto(self):
         """test SAML Source With post binding (auto redirect)"""
         # Bootstrap all needed objects
         authentication_flow = Flow.objects.get(slug="default-source-authentication")
         enrollment_flow = Flow.objects.get(slug="default-source-enrollment")
-        pre_authentication_flow = Flow.objects.get(
-            slug="default-source-pre-authentication"
-        )
+        pre_authentication_flow = Flow.objects.get(slug="default-source-pre-authentication")
         keypair = CertificateKeyPair.objects.create(
             name="test-idp-cert",
             certificate_data=IDP_CERT,
@@ -295,9 +281,7 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.get(self.live_server_url)
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
-        identification_stage = self.get_shadow_root(
-            "ak-stage-identification", flow_executor
-        )
+        identification_stage = self.get_shadow_root("ak-stage-identification", flow_executor)
         wait = WebDriverWait(identification_stage, self.wait_timeout)
 
         wait.until(
@@ -316,11 +300,12 @@ class TestSourceSAML(SeleniumTestCase):
         self.driver.find_element(By.ID, "password").send_keys(Keys.ENTER)
 
         # Wait until we're logged in
-        self.wait_for_url(self.if_admin_url("/library"))
-        self.driver.get(self.if_admin_url("/user"))
+        self.wait_for_url(self.if_user_url("/library"))
+        self.driver.get(self.if_user_url("/settings"))
 
         self.assert_user(
             User.objects.exclude(username="akadmin")
+            .exclude(username__startswith="ak-outpost")
             .exclude(pk=get_anonymous_user().pk)
             .first()
         )

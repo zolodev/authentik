@@ -5,10 +5,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views import View
 from structlog.stdlib import get_logger
 
-from authentik.core.middleware import (
-    SESSION_IMPERSONATE_ORIGINAL_USER,
-    SESSION_IMPERSONATE_USER,
-)
+from authentik.core.middleware import SESSION_IMPERSONATE_ORIGINAL_USER, SESSION_IMPERSONATE_USER
 from authentik.core.models import User
 from authentik.events.models import Event, EventAction
 
@@ -21,9 +18,7 @@ class ImpersonateInitView(View):
     def get(self, request: HttpRequest, user_id: int) -> HttpResponse:
         """Impersonation handler, checks permissions"""
         if not request.user.has_perm("impersonate"):
-            LOGGER.debug(
-                "User attempted to impersonate without permissions", user=request.user
-            )
+            LOGGER.debug("User attempted to impersonate without permissions", user=request.user)
             return HttpResponse("Unauthorized", status=401)
 
         user_to_be = get_object_or_404(User, pk=user_id)
@@ -33,7 +28,7 @@ class ImpersonateInitView(View):
 
         Event.new(EventAction.IMPERSONATION_STARTED).from_http(request, user_to_be)
 
-        return redirect("authentik_core:if-admin")
+        return redirect("authentik_core:if-user")
 
 
 class ImpersonateEndView(View):
@@ -46,7 +41,7 @@ class ImpersonateEndView(View):
             or SESSION_IMPERSONATE_ORIGINAL_USER not in request.session
         ):
             LOGGER.debug("Can't end impersonation", user=request.user)
-            return redirect("authentik_core:if-admin")
+            return redirect("authentik_core:if-user")
 
         original_user = request.session[SESSION_IMPERSONATE_ORIGINAL_USER]
 

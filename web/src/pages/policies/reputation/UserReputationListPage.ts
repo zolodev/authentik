@@ -1,16 +1,19 @@
 import { t } from "@lingui/macro";
-import { customElement, html, property, TemplateResult } from "lit-element";
-import { AKResponse } from "../../../api/Client";
-import { TablePage } from "../../../elements/table/TablePage";
 
+import { TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import { PoliciesApi, UserReputation } from "@goauthentik/api";
+
+import { AKResponse } from "../../../api/Client";
+import { DEFAULT_CONFIG } from "../../../api/Config";
+import { uiConfig } from "../../../common/config";
 import "../../../elements/buttons/ModalButton";
 import "../../../elements/buttons/SpinnerButton";
-import "../../../elements/forms/DeleteForm";
+import "../../../elements/forms/DeleteBulkForm";
 import "../../../elements/forms/ModalForm";
 import { TableColumn } from "../../../elements/table/Table";
-import { PAGE_SIZE } from "../../../constants";
-import { UserReputation, PoliciesApi } from "authentik-api";
-import { DEFAULT_CONFIG } from "../../../api/Config";
+import { TablePage } from "../../../elements/table/TablePage";
 
 @customElement("ak-policy-reputation-user-list")
 export class UserReputationListPage extends TablePage<UserReputation> {
@@ -27,49 +30,47 @@ export class UserReputationListPage extends TablePage<UserReputation> {
         return "fa fa-ban";
     }
 
+    checkbox = true;
+
     @property()
     order = "username";
 
-    apiEndpoint(page: number): Promise<AKResponse<UserReputation>> {
+    async apiEndpoint(page: number): Promise<AKResponse<UserReputation>> {
         return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUsersList({
             ordering: this.order,
             page: page,
-            pageSize: PAGE_SIZE,
+            pageSize: (await uiConfig()).pagination.perPage,
             search: this.search || "",
         });
     }
 
     columns(): TableColumn[] {
-        return [
-            new TableColumn(t`Username`, "username"),
-            new TableColumn(t`Score`, "score"),
-            new TableColumn(""),
-        ];
+        return [new TableColumn(t`Username`, "username"), new TableColumn(t`Score`, "score")];
+    }
+
+    renderToolbarSelected(): TemplateResult {
+        const disabled = this.selectedElements.length < 1;
+        return html`<ak-forms-delete-bulk
+            objectLabel=${t`User Reputation`}
+            .objects=${this.selectedElements}
+            .usedBy=${(item: UserReputation) => {
+                return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUsersUsedByList({
+                    id: item.pk,
+                });
+            }}
+            .delete=${(item: UserReputation) => {
+                return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUsersDestroy({
+                    id: item.pk,
+                });
+            }}
+        >
+            <button ?disabled=${disabled} slot="trigger" class="pf-c-button pf-m-danger">
+                ${t`Delete`}
+            </button>
+        </ak-forms-delete-bulk>`;
     }
 
     row(item: UserReputation): TemplateResult[] {
-        return [
-            html`${item.username}`,
-            html`${item.score}`,
-            html`
-            <ak-forms-delete
-                .obj=${item}
-                objectLabel=${t`User Reputation`}
-                .usedBy=${() => {
-                    return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUsersUsedByList({
-                        id: item.pk
-                    });
-                }}
-                .delete=${() => {
-                    return new PoliciesApi(DEFAULT_CONFIG).policiesReputationUsersDestroy({
-                        id: item.pk,
-                    });
-                }}>
-                <button slot="trigger" class="pf-c-button pf-m-danger">
-                    ${t`Delete`}
-                </button>
-            </ak-forms-delete>`,
-        ];
+        return [html`${item.username}`, html`${item.score}`];
     }
-
 }

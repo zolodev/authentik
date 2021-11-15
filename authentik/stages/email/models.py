@@ -42,9 +42,7 @@ def get_template_choices():
         for template in template_dir.glob("**/*.html"):
             path = str(template)
             if not access(path, R_OK):
-                LOGGER.warning(
-                    "Custom template file is not readable, check permissions", path=path
-                )
+                LOGGER.warning("Custom template file is not readable, check permissions", path=path)
                 continue
             rel_path = template.relative_to(template_dir)
             static_choices.append((str(rel_path), f"Custom Template: {rel_path}"))
@@ -72,6 +70,10 @@ class EmailStage(Stage):
     use_ssl = models.BooleanField(default=False)
     timeout = models.IntegerField(default=10)
     from_address = models.EmailField(default="system@authentik.local")
+
+    activate_user_on_success = models.BooleanField(
+        default=False, help_text=_("Activate users upon completion of stage.")
+    )
 
     token_expiry = models.IntegerField(
         default=30, help_text=_("Time in minutes the token sent is valid.")

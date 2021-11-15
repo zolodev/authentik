@@ -16,18 +16,8 @@ from authentik.crypto.models import CertificateKeyPair
 from authentik.flows.models import Flow
 from authentik.policies.expression.models import ExpressionPolicy
 from authentik.policies.models import PolicyBinding
-from authentik.providers.saml.models import (
-    SAMLBindings,
-    SAMLPropertyMapping,
-    SAMLProvider,
-)
-from tests.e2e.utils import (
-    USER,
-    SeleniumTestCase,
-    apply_migration,
-    object_manager,
-    retry,
-)
+from authentik.providers.saml.models import SAMLBindings, SAMLPropertyMapping, SAMLProvider
+from tests.e2e.utils import USER, SeleniumTestCase, apply_migration, object_manager, retry
 
 LOGGER = get_logger()
 
@@ -42,7 +32,7 @@ class TestProviderSAML(SeleniumTestCase):
         """Setup client saml-sp container which we test SAML against"""
         client: DockerClient = from_env()
         container = client.containers.run(
-            image="ghcr.io/beryju/saml-test-sp:latest",
+            image="beryju.org/saml-test-sp:latest",
             detach=True,
             network_mode="host",
             auto_remove=True,
@@ -72,7 +62,7 @@ class TestProviderSAML(SeleniumTestCase):
             sleep(1)
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -126,9 +116,7 @@ class TestProviderSAML(SeleniumTestCase):
             [str(USER().pk)],
         )
         self.assertEqual(
-            body["attr"][
-                "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
-            ],
+            body["attr"]["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"],
             [USER().email],
         )
         self.assertEqual(
@@ -137,7 +125,7 @@ class TestProviderSAML(SeleniumTestCase):
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -169,9 +157,7 @@ class TestProviderSAML(SeleniumTestCase):
         self.driver.get("http://localhost:9009")
         self.login()
 
-        self.wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "ak-flow-executor"))
-        )
+        self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "ak-flow-executor")))
 
         flow_executor = self.get_shadow_root("ak-flow-executor")
         consent_stage = self.get_shadow_root("ak-stage-consent", flow_executor)
@@ -208,9 +194,7 @@ class TestProviderSAML(SeleniumTestCase):
             [str(USER().pk)],
         )
         self.assertEqual(
-            body["attr"][
-                "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
-            ],
+            body["attr"]["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"],
             [USER().email],
         )
         self.assertEqual(
@@ -219,7 +203,7 @@ class TestProviderSAML(SeleniumTestCase):
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -279,9 +263,7 @@ class TestProviderSAML(SeleniumTestCase):
             [str(USER().pk)],
         )
         self.assertEqual(
-            body["attr"][
-                "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"
-            ],
+            body["attr"]["http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"],
             [USER().email],
         )
         self.assertEqual(
@@ -290,7 +272,7 @@ class TestProviderSAML(SeleniumTestCase):
         )
 
     @retry()
-    @apply_migration("authentik_core", "0003_default_user")
+    @apply_migration("authentik_core", "0002_auto_20200523_1133_squashed_0011_provider_name_temp")
     @apply_migration("authentik_flows", "0008_default_flows")
     @apply_migration("authentik_flows", "0011_flow_title")
     @apply_migration("authentik_flows", "0010_provider_flows")
@@ -326,9 +308,7 @@ class TestProviderSAML(SeleniumTestCase):
         self.driver.get("http://localhost:9009/")
         self.login()
 
-        self.wait.until(
-            ec.presence_of_element_located((By.CSS_SELECTOR, "header > h1"))
-        )
+        self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, "header > h1")))
         self.assertEqual(
             self.driver.find_element(By.CSS_SELECTOR, "header > h1").text,
             "Permission denied",

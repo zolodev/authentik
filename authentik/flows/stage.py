@@ -18,7 +18,7 @@ from authentik.flows.challenge import (
 )
 from authentik.flows.models import InvalidResponseAction
 from authentik.flows.planner import PLAN_CONTEXT_APPLICATION, PLAN_CONTEXT_PENDING_USER
-from authentik.flows.views import FlowExecutorView
+from authentik.flows.views.executor import FlowExecutorView
 
 PLAN_CONTEXT_PENDING_USER_IDENTIFIER = "pending_user_identifier"
 LOGGER = get_logger()
@@ -42,14 +42,9 @@ class StageView(View):
         other things besides the form display.
 
         If no user is pending, returns request.user"""
-        if (
-            PLAN_CONTEXT_PENDING_USER_IDENTIFIER in self.executor.plan.context
-            and for_display
-        ):
+        if PLAN_CONTEXT_PENDING_USER_IDENTIFIER in self.executor.plan.context and for_display:
             return User(
-                username=self.executor.plan.context.get(
-                    PLAN_CONTEXT_PENDING_USER_IDENTIFIER
-                ),
+                username=self.executor.plan.context.get(PLAN_CONTEXT_PENDING_USER_IDENTIFIER),
                 email="",
             )
         if PLAN_CONTEXT_PENDING_USER in self.executor.plan.context:
@@ -154,7 +149,7 @@ class ChallengeStageView(StageView):
                 )
         challenge_response.initial_data["response_errors"] = full_errors
         if not challenge_response.is_valid():
-            LOGGER.warning(
+            LOGGER.error(
                 "f(ch): invalid challenge response",
                 binding=self.executor.current_binding,
                 errors=challenge_response.errors,

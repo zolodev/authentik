@@ -2,6 +2,7 @@
 from time import sleep
 
 from django.conf import settings
+from django.utils.text import slugify
 from docker import DockerClient
 from docker.errors import DockerException, NotFound
 from docker.models.containers import Container
@@ -9,11 +10,8 @@ from yaml import safe_dump
 
 from authentik import __version__
 from authentik.outposts.controllers.base import BaseController, ControllerException
-from authentik.outposts.models import (
-    DockerServiceConnection,
-    Outpost,
-    ServiceConnectionInvalid,
-)
+from authentik.outposts.managed import MANAGED_OUTPOST
+from authentik.outposts.models import DockerServiceConnection, Outpost, ServiceConnectionInvalid
 
 
 class DockerController(BaseController):
@@ -31,16 +29,28 @@ class DockerController(BaseController):
         except ServiceConnectionInvalid as exc:
             raise ControllerException from exc
 
+    @property
+    def name(self) -> str:
+        """Get the name of the object this reconciler manages"""
+        return (
+            self.outpost.config.object_naming_template
+            % {
+                "name": slugify(self.outpost.name),
+                "uuid": self.outpost.uuid.hex,
+            }
+        ).lower()
+
     def _get_labels(self) -> dict[str, str]:
-        return {}
+        return {
+            "io.goauthentik.outpost-uuid": self.outpost.pk.hex,
+        }
 
     def _get_env(self) -> dict[str, str]:
         return {
             "AUTHENTIK_HOST": self.outpost.config.authentik_host.lower(),
-            "AUTHENTIK_INSECURE": str(
-                self.outpost.config.authentik_host_insecure
-            ).lower(),
+            "AUTHENTIK_INSECURE": str(self.outpost.config.authentik_host_insecure).lower(),
             "AUTHENTIK_TOKEN": self.outpost.token.key,
+            "AUTHENTIK_HOST_BROWSER": self.outpost.config.authentik_host_browser,
         }
 
     def _comp_env(self, container: Container) -> bool:
@@ -51,6 +61,17 @@ class DockerController(BaseController):
         for key, expected_value in should_be.items():
             entry = f"{key.upper()}={expected_value}"
             if entry not in container_env:
+                return True
+        return False
+
+    def _comp_labels(self, container: Container) -> bool:
+        """Check if container's labels is equal to what we would set. Return true if container needs
+        to be rebuilt."""
+        should_be = self._get_labels()
+        for key, expected_value in should_be.items():
+            if key not in container.labels:
+                return True
+            if container.labels[key] != expected_value:
                 return True
         return False
 
@@ -67,9 +88,12 @@ class DockerController(BaseController):
         #   {'HostIp': '0.0.0.0', 'HostPort': '389'},
         #   {'HostIp': '::', 'HostPort': '389'}
         # ]}
+        # If no ports are mapped (either mapping disabled, or host network)
+        if not container.ports:
+            return False
         for port in self.deployment_ports:
             key = f"{port.inner_port or port.port}/{port.protocol.lower()}"
-            if key not in container.ports:
+            if not container.ports.get(key, None):
                 return True
             host_matching = False
             for host_port in container.ports[key]:
@@ -78,36 +102,63 @@ class DockerController(BaseController):
                 return True
         return False
 
-    def _get_container(self) -> tuple[Container, bool]:
-        container_name = f"authentik-proxy-{self.outpost.uuid.hex}"
+    def try_pull_image(self):
+        """Try to pull the image needed for this outpost based on the CONFIG
+        `outposts.container_image_base`, but fall back to known-good images"""
+        image = self.get_container_image()
         try:
-            return self.client.containers.get(container_name), False
+            self.client.images.pull(image)
+        except DockerException:
+            image = f"goauthentik.io/{self.outpost.type}:latest"
+            self.client.images.pull(image)
+        return image
+
+    def _get_container(self) -> tuple[Container, bool]:
+        try:
+            return self.client.containers.get(self.name), False
         except NotFound:
             self.logger.info("(Re-)creating container...")
-            image_name = self.get_container_image()
-            self.client.images.pull(image_name)
+            image_name = self.try_pull_image()
             container_args = {
                 "image": image_name,
-                "name": container_name,
+                "name": self.name,
                 "detach": True,
-                "ports": {
-                    f"{port.inner_port or port.port}/{port.protocol.lower()}": port.port
-                    for port in self.deployment_ports
-                },
                 "environment": self._get_env(),
                 "labels": self._get_labels(),
                 "restart_policy": {"Name": "unless-stopped"},
+                "network": self.outpost.config.docker_network,
             }
+            if self.outpost.config.docker_map_ports:
+                container_args["ports"] = {
+                    f"{port.inner_port or port.port}/{port.protocol.lower()}": str(port.port)
+                    for port in self.deployment_ports
+                }
             if settings.TEST:
                 del container_args["ports"]
+                del container_args["network"]
                 container_args["network_mode"] = "host"
             return (
                 self.client.containers.create(**container_args),
                 True,
             )
 
+    def _migrate_container_name(self):
+        """Migrate 2021.9 to 2021.10+"""
+        old_name = f"authentik-proxy-{self.outpost.uuid.hex}"
+        try:
+            old_container: Container = self.client.containers.get(old_name)
+            old_container.kill()
+            old_container.remove()
+        except NotFound:
+            return
+
     # pylint: disable=too-many-return-statements
-    def up(self):
+    def up(self, depth=1):
+        if self.outpost.managed == MANAGED_OUTPOST:
+            return None
+        if depth >= 10:
+            raise ControllerException("Giving up since we exceeded recursion limit.")
+        self._migrate_container_name()
         try:
             container, has_been_created = self._get_container()
             if has_been_created:
@@ -115,25 +166,30 @@ class DockerController(BaseController):
                 return None
             # Check if the container is out of date, delete it and retry
             if len(container.image.tags) > 0:
-                tag: str = container.image.tags[0]
-                if tag != self.get_container_image():
+                should_image = self.try_pull_image()
+                if should_image not in container.image.tags:
                     self.logger.info(
                         "Container has mismatched image, re-creating...",
-                        has=tag,
-                        should=self.get_container_image(),
+                        has=container.image.tags,
+                        should=should_image,
                     )
                     self.down()
-                    return self.up()
+                    return self.up(depth + 1)
             # Check container's ports
             if self._comp_ports(container):
                 self.logger.info("Container has mis-matched ports, re-creating...")
                 self.down()
-                return self.up()
+                return self.up(depth + 1)
             # Check that container values match our values
             if self._comp_env(container):
                 self.logger.info("Container has outdated config, re-creating...")
                 self.down()
-                return self.up()
+                return self.up(depth + 1)
+            # Check that container values match our values
+            if self._comp_labels(container):
+                self.logger.info("Container has outdated labels, re-creating...")
+                self.down()
+                return self.up(depth + 1)
             if (
                 container.attrs.get("HostConfig", {})
                 .get("RestartPolicy", {})
@@ -141,25 +197,19 @@ class DockerController(BaseController):
                 .lower()
                 != "unless-stopped"
             ):
-                self.logger.info(
-                    "Container has mis-matched restart policy, re-creating..."
-                )
+                self.logger.info("Container has mis-matched restart policy, re-creating...")
                 self.down()
-                return self.up()
+                return self.up(depth + 1)
             # Check that container is healthy
-            if (
-                container.status == "running"
-                and container.attrs.get("State", {}).get("Health", {}).get("Status", "")
-                != "healthy"
-            ):
+            if container.status == "running" and container.attrs.get("State", {}).get(
+                "Health", {}
+            ).get("Status", "") not in ["healthy", "starting"]:
                 # At this point we know the config is correct, but the container isn't healthy,
                 # so we just restart it with the same config
                 if has_been_created:
                     # Since we've just created the container, give it some time to start.
                     # If its still not up by then, restart it
-                    self.logger.info(
-                        "Container is unhealthy and new, giving it time to boot."
-                    )
+                    self.logger.info("Container is unhealthy and new, giving it time to boot.")
                     sleep(60)
                 self.logger.info("Container is unhealthy, restarting...")
                 container.restart()
@@ -175,6 +225,8 @@ class DockerController(BaseController):
             raise ControllerException(str(exc)) from exc
 
     def down(self):
+        if self.outpost.managed != MANAGED_OUTPOST:
+            return
         try:
             container, _ = self._get_container()
             if container.status == "running":
@@ -198,10 +250,9 @@ class DockerController(BaseController):
                     "ports": ports,
                     "environment": {
                         "AUTHENTIK_HOST": self.outpost.config.authentik_host,
-                        "AUTHENTIK_INSECURE": str(
-                            self.outpost.config.authentik_host_insecure
-                        ),
+                        "AUTHENTIK_INSECURE": str(self.outpost.config.authentik_host_insecure),
                         "AUTHENTIK_TOKEN": self.outpost.token.key,
+                        "AUTHENTIK_HOST_BROWSER": self.outpost.config.authentik_host_browser,
                     },
                     "labels": self._get_labels(),
                 }

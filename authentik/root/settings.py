@@ -14,6 +14,7 @@ import importlib
 import logging
 import os
 import sys
+from hashlib import sha512
 from json import dumps
 from tempfile import gettempdir
 from time import time
@@ -31,6 +32,9 @@ from authentik.core.middleware import structlog_add_request_id
 from authentik.lib.config import CONFIG
 from authentik.lib.logging import add_process_id
 from authentik.lib.sentry import before_send
+from authentik.lib.utils.http import get_http_session
+from authentik.lib.utils.reflection import get_env
+from authentik.stages.password import BACKEND_APP_PASSWORD, BACKEND_INBUILT, BACKEND_LDAP
 
 
 def j_print(event: str, log_level: str = "info", **kwargs):
@@ -70,9 +74,13 @@ _cookie_suffix = "_debug" if DEBUG else ""
 CSRF_COOKIE_NAME = "authentik_csrf"
 LANGUAGE_COOKIE_NAME = f"authentik_language{_cookie_suffix}"
 SESSION_COOKIE_NAME = f"authentik_session{_cookie_suffix}"
+SESSION_COOKIE_DOMAIN = CONFIG.y("cookie_domain", None)
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",
+    BACKEND_INBUILT,
+    BACKEND_APP_PASSWORD,
+    BACKEND_LDAP,
     "guardian.backends.ObjectPermissionBackend",
 ]
 
@@ -88,12 +96,11 @@ INSTALLED_APPS = [
     "django.contrib.humanize",
     "authentik.admin",
     "authentik.api",
-    "authentik.events",
     "authentik.crypto",
+    "authentik.events",
     "authentik.flows",
-    "authentik.outposts",
     "authentik.lib",
-    "authentik.policies",
+    "authentik.outposts",
     "authentik.policies.dummy",
     "authentik.policies.event_matcher",
     "authentik.policies.expiry",
@@ -101,6 +108,7 @@ INSTALLED_APPS = [
     "authentik.policies.hibp",
     "authentik.policies.password",
     "authentik.policies.reputation",
+    "authentik.policies",
     "authentik.providers.ldap",
     "authentik.providers.oauth2",
     "authentik.providers.proxy",
@@ -112,6 +120,7 @@ INSTALLED_APPS = [
     "authentik.sources.plex",
     "authentik.sources.saml",
     "authentik.stages.authenticator_duo",
+    "authentik.stages.authenticator_sms",
     "authentik.stages.authenticator_static",
     "authentik.stages.authenticator_totp",
     "authentik.stages.authenticator_validate",
@@ -146,9 +155,20 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Making authentication simple.",
     "VERSION": __version__,
     "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v([0-9]+(beta)?)",
+    "SCHEMA_PATH_PREFIX_TRIM": True,
+    "SERVERS": [
+        {
+            "url": "/api/v3/",
+        },
+        {
+            "url": "/api/v2beta/",
+        },
+    ],
     "CONTACT": {
         "email": "hello@beryju.org",
     },
+    "AUTHENTICATION_WHITELIST": ["authentik.api.authentication.TokenAuthentication"],
     "LICENSE": {
         "name": "GNU GPLv3",
         "url": "https://github.com/goauthentik/authentik/blob/master/LICENSE",
@@ -159,6 +179,7 @@ SPECTACULAR_SETTINGS = {
         "FlowDesignationEnum": "authentik.flows.models.FlowDesignation",
         "PolicyEngineMode": "authentik.policies.models.PolicyEngineMode",
         "ProxyMode": "authentik.providers.proxy.models.ProxyMode",
+        "PromptTypeEnum": "authentik.stages.prompt.models.FieldTypes",
     },
     "ENUM_ADD_EXPLICIT_BLANK_NULL_CHOICE": False,
     "POSTPROCESSING_HOOKS": [
@@ -176,9 +197,10 @@ REST_FRAMEWORK = {
         "rest_framework.filters.OrderingFilter",
         "rest_framework.filters.SearchFilter",
     ],
-    "DEFAULT_PERMISSION_CLASSES": (
-        "rest_framework.permissions.DjangoObjectPermissions",
-    ),
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.DjangoObjectPermissions",),
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "authentik.api.authentication.TokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
@@ -187,6 +209,7 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "TEST_REQUEST_DEFAULT_FORMAT": "json",
 }
 
 REDIS_PROTOCOL_PREFIX = "redis://"
@@ -219,6 +242,7 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 MESSAGE_STORAGE = "authentik.root.messages.storage.ChannelsStorage"
 
 MIDDLEWARE = [
+    "authentik.root.middleware.LoggingMiddleware",
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "authentik.root.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -288,7 +312,7 @@ EMAIL_HOST = CONFIG.y("email.host")
 EMAIL_PORT = int(CONFIG.y("email.port"))
 EMAIL_HOST_USER = CONFIG.y("email.username")
 EMAIL_HOST_PASSWORD = CONFIG.y("email.password")
-EMAIL_USE_TLS = CONFIG.y_bool("email.use_tls", True)
+EMAIL_USE_TLS = CONFIG.y_bool("email.use_tls", False)
 EMAIL_USE_SSL = CONFIG.y_bool("email.use_ssl", False)
 EMAIL_TIMEOUT = int(CONFIG.y("email.timeout"))
 DEFAULT_FROM_EMAIL = CONFIG.y("email.from")
@@ -321,6 +345,7 @@ USE_L10N = True
 
 USE_TZ = True
 
+LOCALE_PATHS = ["./locale"]
 
 # Celery settings
 # Add a 10 minute timeout to all Celery tasks.
@@ -355,12 +380,13 @@ CELERY_RESULT_BACKEND = (
 # Database backup
 DBBACKUP_STORAGE = "django.core.files.storage.FileSystemStorage"
 DBBACKUP_STORAGE_OPTIONS = {"location": "./backups" if DEBUG else "/backups"}
-DBBACKUP_FILENAME_TEMPLATE = "authentik-backup-{datetime}.sql"
+DBBACKUP_FILENAME_TEMPLATE = f"authentik-backup-{__version__}-{{datetime}}.sql"
 DBBACKUP_CONNECTOR_MAPPING = {
     "django_prometheus.db.backends.postgresql": "dbbackup.db.postgresql.PgDumpConnector",
 }
 DBBACKUP_TMP_DIR = gettempdir() if DEBUG else "/tmp"  # nosec
-if CONFIG.y("postgresql.s3_backup"):
+DBBACKUP_CLEANUP_KEEP = 30
+if CONFIG.y("postgresql.s3_backup.bucket", "") != "":
     DBBACKUP_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
     DBBACKUP_STORAGE_OPTIONS = {
         "access_key": CONFIG.y("postgresql.s3_backup.access_key"),
@@ -370,6 +396,7 @@ if CONFIG.y("postgresql.s3_backup"):
         "default_acl": "private",
         "endpoint_url": CONFIG.y("postgresql.s3_backup.host"),
         "location": CONFIG.y("postgresql.s3_backup.location", ""),
+        "verify": not CONFIG.y_bool("postgresql.s3_backup.insecure_skip_verify", False),
     }
     j_print(
         "Database backup to S3 is configured",
@@ -378,6 +405,12 @@ if CONFIG.y("postgresql.s3_backup"):
 
 # Sentry integration
 SENTRY_DSN = "https://a579bb09306d4f8b8d8847c052d3a1d3@sentry.beryju.org/8"
+# Default to empty string as that is what docker has
+build_hash = os.environ.get(ENV_GIT_HASH_KEY, "")
+if build_hash == "":
+    build_hash = "tagged"
+
+env = get_env()
 _ERROR_REPORTING = CONFIG.y_bool("error_reporting.enabled", False)
 if _ERROR_REPORTING:
     # pylint: disable=abstract-class-instantiated
@@ -394,20 +427,34 @@ if _ERROR_REPORTING:
         environment=CONFIG.y("error_reporting.environment", "customer"),
         send_default_pii=CONFIG.y_bool("error_reporting.send_pii", False),
     )
-    # Default to empty string as that is what docker has
-    build_hash = os.environ.get(ENV_GIT_HASH_KEY, "")
-    if build_hash == "":
-        build_hash = "tagged"
     set_tag("authentik.build_hash", build_hash)
-    set_tag(
-        "authentik.env", "kubernetes" if "KUBERNETES_PORT" in os.environ else "compose"
-    )
+    set_tag("authentik.env", env)
     set_tag("authentik.component", "backend")
     j_print(
         "Error reporting is enabled",
         env=CONFIG.y("error_reporting.environment", "customer"),
     )
-
+if not CONFIG.y_bool("disable_startup_analytics", False):
+    should_send = env not in ["dev", "ci"]
+    if should_send:
+        try:
+            get_http_session().post(
+                "https://goauthentik.io/api/event",
+                json={
+                    "domain": "authentik",
+                    "name": "pageview",
+                    "referrer": f"{__version__} ({build_hash})",
+                    "url": f"http://localhost/{env}?utm_source={__version__}&utm_medium={env}",
+                },
+                headers={
+                    "User-Agent": sha512(SECRET_KEY.encode("ascii")).hexdigest()[:16],
+                    "Content-Type": "application/json",
+                },
+                timeout=5,
+            )
+        # pylint: disable=bare-except
+        except:  # nosec
+            pass
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
@@ -430,7 +477,6 @@ structlog.configure_once(
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso", utc=False),
         structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
         structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
     ],
     logger_factory=structlog.stdlib.LoggerFactory(),
@@ -447,7 +493,6 @@ LOG_PRE_CHAIN = [
     structlog.stdlib.add_logger_name,
     structlog.processors.TimeStamper(),
     structlog.processors.StackInfoRenderer(),
-    structlog.processors.format_exc_info,
 ]
 
 LOGGING = {
@@ -490,6 +535,7 @@ _LOGGING_HANDLER_MAP = {
     "kubernetes": "INFO",
     "asyncio": "WARNING",
     "aioredis": "WARNING",
+    "s3transfer": "WARNING",
 }
 for handler_name, level in _LOGGING_HANDLER_MAP.items():
     # pyright: reportGeneralTypeIssues=false
@@ -512,15 +558,11 @@ for _app in INSTALLED_APPS:
         if "apps" in _app:
             _app = ".".join(_app.split(".")[:-2])
         try:
-            app_settings = importlib.import_module("%s.settings" % _app)
+            app_settings = importlib.import_module(f"{_app}.settings")
             INSTALLED_APPS.extend(getattr(app_settings, "INSTALLED_APPS", []))
             MIDDLEWARE.extend(getattr(app_settings, "MIDDLEWARE", []))
-            AUTHENTICATION_BACKENDS.extend(
-                getattr(app_settings, "AUTHENTICATION_BACKENDS", [])
-            )
-            CELERY_BEAT_SCHEDULE.update(
-                getattr(app_settings, "CELERY_BEAT_SCHEDULE", {})
-            )
+            AUTHENTICATION_BACKENDS.extend(getattr(app_settings, "AUTHENTICATION_BACKENDS", []))
+            CELERY_BEAT_SCHEDULE.update(getattr(app_settings, "CELERY_BEAT_SCHEDULE", {}))
             for _attr in dir(app_settings):
                 if not _attr.startswith("__") and _attr not in _DISALLOWED_ITEMS:
                     globals()[_attr] = getattr(app_settings, _attr)

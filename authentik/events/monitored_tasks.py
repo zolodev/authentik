@@ -3,20 +3,24 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from timeit import default_timer
-from traceback import format_tb
 from typing import Any, Optional
 
 from celery import Task
 from django.core.cache import cache
+from django.utils.translation import gettext_lazy as _
 from prometheus_client import Gauge
+from structlog.stdlib import get_logger
 
 from authentik.events.models import Event, EventAction
+from authentik.lib.utils.errors import exception_to_string
 
 GAUGE_TASKS = Gauge(
     "authentik_system_tasks",
     "System tasks and their status",
     ["task_name", "task_uid", "status"],
 )
+
+LOGGER = get_logger()
 
 
 class TaskResultStatus(Enum):
@@ -25,6 +29,7 @@ class TaskResultStatus(Enum):
     SUCCESSFUL = 1
     WARNING = 2
     ERROR = 4
+    UNKNOWN = 8
 
 
 @dataclass
@@ -41,8 +46,7 @@ class TaskResult:
 
     def with_error(self, exc: Exception) -> "TaskResult":
         """Since errors might not always be pickle-able, set the traceback"""
-        self.messages.extend(format_tb(exc.__traceback__))
-        self.messages.append(str(exc))
+        self.messages.extend(exception_to_string(exc).splitlines())
         return self
 
 
@@ -77,7 +81,7 @@ class TaskInfo:
     @staticmethod
     def by_name(name: str) -> Optional["TaskInfo"]:
         """Get TaskInfo Object by name"""
-        return cache.get(f"task_{name}")
+        return cache.get(f"task_{name}", None)
 
     def delete(self):
         """Delete task info from cache"""
@@ -108,13 +112,37 @@ class TaskInfo:
         cache.set(key, self, timeout=timeout_hours * 60 * 60)
 
 
+def prefill_task():
+    """Ensure a task's details are always in cache, so it can always be triggered via API"""
+
+    def inner_wrap(func):
+        status = TaskInfo.by_name(func.__name__)
+        if status:
+            return func
+        TaskInfo(
+            task_name=func.__name__,
+            task_description=func.__doc__,
+            result=TaskResult(TaskResultStatus.UNKNOWN, messages=[_("Task has not been run yet.")]),
+            task_call_module=func.__module__,
+            task_call_func=func.__name__,
+            # We don't have real values for these attributes but they cannot be null
+            start_timestamp=default_timer(),
+            finish_timestamp=default_timer(),
+            finish_time=datetime.now(),
+        ).save(86400)
+        LOGGER.debug("prefilled task", task_name=func.__name__)
+        return func
+
+    return inner_wrap
+
+
 class MonitoredTask(Task):
     """Task which can save its state to the cache"""
 
     # For tasks that should only be listed if they failed, set this to False
     save_on_success: bool
 
-    _result: TaskResult
+    _result: Optional[TaskResult]
 
     _uid: Optional[str]
 
@@ -122,7 +150,7 @@ class MonitoredTask(Task):
         super().__init__(*args, **kwargs)
         self.save_on_success = True
         self._uid = None
-        self._result = TaskResult(status=TaskResultStatus.ERROR, messages=[])
+        self._result = None
         self.result_timeout_hours = 6
         self.start = default_timer()
 
@@ -135,28 +163,29 @@ class MonitoredTask(Task):
         self._result = result
 
     # pylint: disable=too-many-arguments
-    def after_return(
-        self, status, retval, task_id, args: list[Any], kwargs: dict[str, Any], einfo
-    ):
-        if not self._result.uid:
-            self._result.uid = self._uid
-        if self.save_on_success:
-            TaskInfo(
-                task_name=self.__name__,
-                task_description=self.__doc__,
-                start_timestamp=self.start,
-                finish_timestamp=default_timer(),
-                finish_time=datetime.now(),
-                result=self._result,
-                task_call_module=self.__module__,
-                task_call_func=self.__name__,
-                task_call_args=args,
-                task_call_kwargs=kwargs,
-            ).save(self.result_timeout_hours)
+    def after_return(self, status, retval, task_id, args: list[Any], kwargs: dict[str, Any], einfo):
+        if self._result:
+            if not self._result.uid:
+                self._result.uid = self._uid
+            if self.save_on_success:
+                TaskInfo(
+                    task_name=self.__name__,
+                    task_description=self.__doc__,
+                    start_timestamp=self.start,
+                    finish_timestamp=default_timer(),
+                    finish_time=datetime.now(),
+                    result=self._result,
+                    task_call_module=self.__module__,
+                    task_call_func=self.__name__,
+                    task_call_args=args,
+                    task_call_kwargs=kwargs,
+                ).save(self.result_timeout_hours)
         return super().after_return(status, retval, task_id, args, kwargs, einfo=einfo)
 
     # pylint: disable=too-many-arguments
     def on_failure(self, exc, task_id, args, kwargs, einfo):
+        if not self._result:
+            self._result = TaskResult(status=TaskResultStatus.ERROR, messages=[str(exc)])
         if not self._result.uid:
             self._result.uid = self._uid
         TaskInfo(
@@ -173,10 +202,7 @@ class MonitoredTask(Task):
         ).save(self.result_timeout_hours)
         Event.new(
             EventAction.SYSTEM_TASK_EXCEPTION,
-            message=(
-                f"Task {self.__name__} encountered an error: "
-                "\n".join(self._result.messages)
-            ),
+            message=(f"Task {self.__name__} encountered an error: {exception_to_string(exc)}"),
         ).save()
         return super().on_failure(exc, task_id, args, kwargs, einfo=einfo)
 

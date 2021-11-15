@@ -1,19 +1,23 @@
-import { CSSResult, customElement, html, LitElement, property, TemplateResult } from "lit-element";
-import { AKPagination } from "../../api/Client";
 import { t } from "@lingui/macro";
-import PFBase from "@patternfly/patternfly/patternfly-base.css";
+
+import { CSSResult, LitElement, TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import AKGlobal from "../../authentik.css";
 import PFButton from "@patternfly/patternfly/components/Button/button.css";
 import PFPagination from "@patternfly/patternfly/components/Pagination/pagination.css";
-import AKGlobal from "../../authentik.css";
+import PFBase from "@patternfly/patternfly/patternfly-base.css";
+
+import { AKPagination } from "../../api/Client";
 
 @customElement("ak-table-pagination")
 export class TablePagination extends LitElement {
-    @property({attribute: false})
+    @property({ attribute: false })
     pages?: AKPagination;
 
-    @property({attribute: false})
+    @property({ attribute: false })
     // eslint-disable-next-line
-    pageChangeHandler: (page: number) => void = (page: number) => {}
+    pageChangeHandler: (page: number) => void = (page: number) => {};
 
     static get styles(): CSSResult[] {
         return [PFBase, PFButton, PFPagination, AKGlobal];
@@ -33,7 +37,9 @@ export class TablePagination extends LitElement {
                     <div class="pf-c-pagination__nav-control pf-m-prev">
                         <button
                             class="pf-c-button pf-m-plain"
-                            @click=${() => { this.pageChangeHandler(this.pages?.previous || 0); }}
+                            @click=${() => {
+                                this.pageChangeHandler(this.pages?.previous || 0);
+                            }}
                             ?disabled="${(this.pages?.previous || 0) < 1}"
                             aria-label="${t`Go to previous page`}"
                         >
@@ -43,7 +49,9 @@ export class TablePagination extends LitElement {
                     <div class="pf-c-pagination__nav-control pf-m-next">
                         <button
                             class="pf-c-button pf-m-plain"
-                            @click=${() => { this.pageChangeHandler(this.pages?.next || 0); }}
+                            @click=${() => {
+                                this.pageChangeHandler(this.pages?.next || 0);
+                            }}
                             ?disabled="${(this.pages?.next || 0) <= 0}"
                             aria-label="${t`Go to next page`}"
                         >

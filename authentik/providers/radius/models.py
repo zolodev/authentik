@@ -7,15 +7,15 @@ from rest_framework.serializers import Serializer
 
 from authentik.core.models import Provider
 from authentik.crypto.models import CertificateKeyPair
+from authentik.lib.generators import generate_key
 from authentik.outposts.models import OutpostModel
-from authentik.providers.oauth2.generators import generate_client_secret
 
 
 class RadiusProvider(OutpostModel, Provider):
     """Allow applications to authenticate against authentik's users using Radius."""
 
     shared_secret = models.TextField(
-        default=generate_client_secret,
+        default=generate_key,
         help_text=_("Shared secret between clients and server to hash packets."),
     )
 

@@ -1,16 +1,18 @@
-import { CertificateKeyPair, CertificateKeyPairRequest, CryptoApi } from "authentik-api";
 import { t } from "@lingui/macro";
-import { customElement } from "lit-element";
-import { html, TemplateResult } from "lit-html";
+
+import { TemplateResult, html } from "lit";
+import { customElement } from "lit/decorators.js";
+import { ifDefined } from "lit/directives/if-defined.js";
+
+import { CertificateKeyPair, CertificateKeyPairRequest, CryptoApi } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../api/Config";
-import { ifDefined } from "lit-html/directives/if-defined";
-import "../../elements/forms/HorizontalFormElement";
 import "../../elements/CodeMirror";
+import "../../elements/forms/HorizontalFormElement";
 import { ModelForm } from "../../elements/forms/ModelForm";
 
 @customElement("ak-crypto-certificate-form")
 export class CertificateKeyPairForm extends ModelForm<CertificateKeyPair, string> {
-
     loadInstance(pk: string): Promise<CertificateKeyPair> {
         return new CryptoApi(DEFAULT_CONFIG).cryptoCertificatekeypairsRetrieve({
             kpUuid: pk,
@@ -29,39 +31,44 @@ export class CertificateKeyPairForm extends ModelForm<CertificateKeyPair, string
         if (this.instance) {
             return new CryptoApi(DEFAULT_CONFIG).cryptoCertificatekeypairsPartialUpdate({
                 kpUuid: this.instance.pk || "",
-                patchedCertificateKeyPairRequest: data
+                patchedCertificateKeyPairRequest: data,
             });
         } else {
             return new CryptoApi(DEFAULT_CONFIG).cryptoCertificatekeypairsCreate({
-                certificateKeyPairRequest: data as unknown as CertificateKeyPairRequest
+                certificateKeyPairRequest: data as unknown as CertificateKeyPairRequest,
             });
         }
     };
 
     renderForm(): TemplateResult {
         return html`<form class="pf-c-form pf-m-horizontal">
-            <ak-form-element-horizontal
-                label=${t`Name`}
-                name="name"
-                ?required=${true}>
-                <input type="text" value="${ifDefined(this.instance?.name)}" class="pf-c-form-control" required>
+            <ak-form-element-horizontal label=${t`Name`} name="name" ?required=${true}>
+                <input
+                    type="text"
+                    value="${ifDefined(this.instance?.name)}"
+                    class="pf-c-form-control"
+                    required
+                />
             </ak-form-element-horizontal>
             <ak-form-element-horizontal
                 label=${t`Certificate`}
                 name="certificateData"
                 ?writeOnly=${this.instance !== undefined}
-                ?required=${true}>
+                ?required=${true}
+            >
                 <textarea class="pf-c-form-control" required></textarea>
                 <p class="pf-c-form__helper-text">${t`PEM-encoded Certificate data.`}</p>
             </ak-form-element-horizontal>
             <ak-form-element-horizontal
                 name="keyData"
                 ?writeOnly=${this.instance !== undefined}
-                label=${t`Private Key`}>
-                <textarea class="pf-c-form-control" ></textarea>
-                <p class="pf-c-form__helper-text">${t`Optional Private Key. If this is set, you can use this keypair for encryption.`}</p>
+                label=${t`Private Key`}
+            >
+                <textarea class="pf-c-form-control"></textarea>
+                <p class="pf-c-form__helper-text">
+                    ${t`Optional Private Key. If this is set, you can use this keypair for encryption.`}
+                </p>
             </ak-form-element-horizontal>
         </form>`;
     }
-
 }

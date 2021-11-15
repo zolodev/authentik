@@ -1,9 +1,13 @@
-import { customElement, html, LitElement, property, TemplateResult } from "lit-element";
 import FlowChart from "flowchart.js";
-import { loading } from "../../utils";
-import { FlowsApi } from "authentik-api";
+
+import { LitElement, TemplateResult, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
+
+import { FlowsApi } from "@goauthentik/api";
+
 import { DEFAULT_CONFIG } from "../../api/Config";
 import { EVENT_REFRESH } from "../../constants";
+import { loading } from "../../utils";
 
 export const FONT_COLOUR_DARK_MODE = "#fafafa";
 export const FONT_COLOUR_LIGHT_MODE = "#151515";
@@ -12,20 +16,21 @@ export const FILL_LIGHT_MODE = "#f0f0f0";
 
 @customElement("ak-flow-diagram")
 export class FlowDiagram extends LitElement {
-
     _flowSlug?: string;
 
     @property()
     set flowSlug(value: string) {
         this._flowSlug = value;
-        new FlowsApi(DEFAULT_CONFIG).flowsInstancesDiagramRetrieve({
-            slug: value,
-        }).then((data) => {
-            this.diagram = FlowChart.parse(data.diagram || "");
-        });
+        new FlowsApi(DEFAULT_CONFIG)
+            .flowsInstancesDiagramRetrieve({
+                slug: value,
+            })
+            .then((data) => {
+                this.diagram = FlowChart.parse(data.diagram || "");
+            });
     }
 
-    @property({attribute: false})
+    @property({ attribute: false })
     diagram?: FlowChart.Instance;
 
     @property()
@@ -73,5 +78,4 @@ export class FlowDiagram extends LitElement {
         }
         return loading(this.diagram, html``);
     }
-
 }

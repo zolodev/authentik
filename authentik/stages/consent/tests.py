@@ -1,9 +1,9 @@
 """consent tests"""
 from time import sleep
 
-from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils.encoding import force_str
+from rest_framework.test import APITestCase
 
 from authentik.core.models import Application, User
 from authentik.core.tasks import clean_expired_models
@@ -11,23 +11,20 @@ from authentik.flows.challenge import ChallengeTypes
 from authentik.flows.markers import StageMarker
 from authentik.flows.models import Flow, FlowDesignation, FlowStageBinding
 from authentik.flows.planner import PLAN_CONTEXT_APPLICATION, FlowPlan
-from authentik.flows.views import SESSION_KEY_PLAN
+from authentik.flows.views.executor import SESSION_KEY_PLAN
 from authentik.stages.consent.models import ConsentMode, ConsentStage, UserConsent
 
 
-class TestConsentStage(TestCase):
+class TestConsentStage(APITestCase):
     """Consent tests"""
 
     def setUp(self):
         super().setUp()
-        self.user = User.objects.create_user(
-            username="unittest", email="test@beryju.org"
-        )
+        self.user = User.objects.create_user(username="unittest", email="test@beryju.org")
         self.application = Application.objects.create(
             name="test-application",
             slug="test-application",
         )
-        self.client = Client()
 
     def test_always_required(self):
         """Test always required consent"""
@@ -36,14 +33,10 @@ class TestConsentStage(TestCase):
             slug="test-consent",
             designation=FlowDesignation.AUTHENTICATION,
         )
-        stage = ConsentStage.objects.create(
-            name="consent", mode=ConsentMode.ALWAYS_REQUIRE
-        )
+        stage = ConsentStage.objects.create(name="consent", mode=ConsentMode.ALWAYS_REQUIRE)
         binding = FlowStageBinding.objects.create(target=flow, stage=stage, order=2)
 
-        plan = FlowPlan(
-            flow_pk=flow.pk.hex, bindings=[binding], markers=[StageMarker()]
-        )
+        plan = FlowPlan(flow_pk=flow.pk.hex, bindings=[binding], markers=[StageMarker()])
         session = self.client.session
         session[SESSION_KEY_PLAN] = plan
         session.save()
@@ -51,8 +44,10 @@ class TestConsentStage(TestCase):
             reverse("authentik_api:flow-executor", kwargs={"flow_slug": flow.slug}),
             {},
         )
+        # pylint: disable=no-member
         self.assertEqual(response.status_code, 200)
         self.assertJSONEqual(
+            # pylint: disable=no-member
             force_str(response.content),
             {
                 "component": "xak-flow-redirect",
@@ -96,9 +91,7 @@ class TestConsentStage(TestCase):
             },
         )
         self.assertTrue(
-            UserConsent.objects.filter(
-                user=self.user, application=self.application
-            ).exists()
+            UserConsent.objects.filter(user=self.user, application=self.application).exists()
         )
 
     def test_expire(self):
@@ -137,14 +130,10 @@ class TestConsentStage(TestCase):
             },
         )
         self.assertTrue(
-            UserConsent.objects.filter(
-                user=self.user, application=self.application
-            ).exists()
+            UserConsent.objects.filter(user=self.user, application=self.application).exists()
         )
         sleep(1)
         clean_expired_models.delay().get()
         self.assertFalse(
-            UserConsent.objects.filter(
-                user=self.user, application=self.application
-            ).exists()
+            UserConsent.objects.filter(user=self.user, application=self.application).exists()
         )

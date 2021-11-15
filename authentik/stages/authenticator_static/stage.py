@@ -4,11 +4,7 @@ from django_otp.plugins.otp_static.models import StaticDevice, StaticToken
 from rest_framework.fields import CharField, ListField
 from structlog.stdlib import get_logger
 
-from authentik.flows.challenge import (
-    ChallengeResponse,
-    ChallengeTypes,
-    WithUserInfoChallenge,
-)
+from authentik.flows.challenge import ChallengeResponse, ChallengeTypes, WithUserInfoChallenge
 from authentik.flows.planner import PLAN_CONTEXT_PENDING_USER
 from authentik.flows.stage import ChallengeStageView
 from authentik.stages.authenticator_static.models import AuthenticatorStaticStage
@@ -59,12 +55,10 @@ class AuthenticatorStaticStageView(ChallengeStageView):
         stage: AuthenticatorStaticStage = self.executor.current_stage
 
         if SESSION_STATIC_DEVICE not in self.request.session:
-            device = StaticDevice(user=user, confirmed=True)
+            device = StaticDevice(user=user, confirmed=True, name="Static Token")
             tokens = []
             for _ in range(0, stage.token_count):
-                tokens.append(
-                    StaticToken(device=device, token=StaticToken.random_token())
-                )
+                tokens.append(StaticToken(device=device, token=StaticToken.random_token()))
             self.request.session[SESSION_STATIC_DEVICE] = device
             self.request.session[SESSION_STATIC_TOKENS] = tokens
         return super().get(request, *args, **kwargs)

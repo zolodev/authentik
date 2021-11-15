@@ -1,5 +1,7 @@
 import { t } from "@lingui/macro";
-import { html, TemplateResult } from "lit-html";
+
+import { TemplateResult, html } from "lit";
+
 import "./elements/EmptyState";
 
 export function getCookie(name: string): string {
@@ -26,12 +28,9 @@ export function convertToSlug(text: string): string {
 }
 
 export function convertToTitle(text: string): string {
-    return text.replace(
-        /\w\S*/g,
-        function (txt) {
-            return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
-        }
-    );
+    return text.replace(/\w\S*/g, function (txt) {
+        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    });
 }
 
 export function truncate(input?: string, max = 10): string {
@@ -44,10 +43,7 @@ export function truncate(input?: string, max = 10): string {
 
 export function loading<T>(v: T, actual: TemplateResult): TemplateResult {
     if (!v) {
-        return html`<ak-empty-state
-            ?loading="${true}"
-            header=${t`Loading`}>
-        </ak-empty-state>`;
+        return html`<ak-empty-state ?loading="${true}" header=${t`Loading`}> </ak-empty-state>`;
     }
     return actual;
 }
@@ -59,7 +55,7 @@ export function camelToSnake(key: string): string {
 
 export function groupBy<T>(objects: T[], callback: (obj: T) => string): Array<[string, T[]]> {
     const m = new Map<string, T[]>();
-    objects.forEach(obj => {
+    objects.forEach((obj) => {
         const group = callback(obj);
         if (!m.has(group)) {
             m.set(group, []);
@@ -92,4 +88,14 @@ export function randomString(len: number): string {
     const arr = new Uint8Array(len / 2);
     window.crypto.getRandomValues(arr);
     return hexEncode(arr);
+}
+
+export function dateTimeLocal(date: Date): string {
+    // So for some reason, the datetime-local input field requires ISO Datetime as value
+    // But the standard javascript date.toISOString() returns everything with seconds and
+    // milliseconds, which the input field doesn't like (on chrome, on firefox its fine)
+    // On chrome, setting .valueAsNumber works, but that causes an error on firefox, so go
+    // figure.
+    const parts = date.toISOString().split(":");
+    return `${parts[0]}:${parts[1]}`;
 }
