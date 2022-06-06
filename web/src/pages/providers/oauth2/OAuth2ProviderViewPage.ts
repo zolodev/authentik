@@ -88,90 +88,72 @@ export class OAuth2ProviderViewPage extends LitElement {
         }
             <div class="pf-c-page__main-section pf-m-no-padding-mobile pf-l-grid pf-m-gutter">
                 <div class="pf-c-card pf-l-grid__item pf-m-12-col">
-                            <div class="pf-c-card">
-                                <div class="pf-c-card__body">
-                                    <dl class="pf-c-description-list pf-m-2-col-on-lg">
-                                        <div class="pf-c-description-list__group">
-                                            <dt class="pf-c-description-list__term">
-                                                <span class="pf-c-description-list__text"
-                                                    >${t`Name`}</span
-                                                >
-                                            </dt>
-                                            <dd class="pf-c-description-list__description">
-                                                <div class="pf-c-description-list__text">
-                                                    ${this.provider.name}
-                                                </div>
-                                            </dd>
-                                        </div>
-                                        <div class="pf-c-description-list__group">
-                                            <dt class="pf-c-description-list__term">
-                                                <span class="pf-c-description-list__text"
-                                                    >${t`Assigned to application`}</span
-                                                >
-                                            </dt>
-                                            <dd class="pf-c-description-list__description">
-                                                <div class="pf-c-description-list__text">
-                                                    <ak-provider-related-application
-                                                        .provider=${this.provider}
-                                                    ></ak-provider-related-application>
-                                                </div>
-                                            </dd>
-                                        </div>
-                                        <div class="pf-c-description-list__group">
-                                            <dt class="pf-c-description-list__term">
-                                                <span class="pf-c-description-list__text"
-                                                    >${t`Client type`}</span
-                                                >
-                                            </dt>
-                                            <dd class="pf-c-description-list__description">
-                                                <div class="pf-c-description-list__text">
-                                                    ${convertToTitle(
-                                                        this.provider.clientType || "",
-                                                    )}
-                                                </div>
-                                            </dd>
-                                        </div>
-                                        <div class="pf-c-description-list__group">
-                                            <dt class="pf-c-description-list__term">
-                                                <span class="pf-c-description-list__text"
-                                                    >${t`Client ID`}</span
-                                                >
-                                            </dt>
-                                            <dd class="pf-c-description-list__description">
-                                                <div class="pf-c-description-list__text">
-                                                    ${this.provider.clientId}
-                                                </div>
-                                            </dd>
-                                        </div>
-                                        <div class="pf-c-description-list__group">
-                                            <dt class="pf-c-description-list__term">
-                                                <span class="pf-c-description-list__text"
-                                                    >${t`Redirect URIs`}</span
-                                                >
-                                            </dt>
-                                            <dd class="pf-c-description-list__description">
-                                                <div class="pf-c-description-list__text">
-                                                    ${this.provider.redirectUris}
-                                                </div>
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                                <div class="pf-c-card__footer">
-                                    <ak-forms-modal>
-                                        <span slot="submit"> ${t`Update`} </span>
-                                        <span slot="header"> ${t`Update OAuth2 Provider`} </span>
-                                        <ak-provider-oauth2-form
-                                            slot="form"
-                                            .instancePk=${this.provider.pk || 0}
+                    <div class="pf-c-card">
+                        <div class="pf-c-card__body">
+                            <dl class="pf-c-description-list pf-m-2-col-on-lg">
+                                <div class="pf-c-description-list__group">
+                                    <dt class="pf-c-description-list__term">
+                                        <span class="pf-c-description-list__text"
+                                            >${t`Name`}</span
                                         >
-                                        </ak-provider-oauth2-form>
-                                        <button slot="trigger" class="pf-c-button pf-m-primary">
-                                            ${t`Edit`}
-                                        </button>
-                                    </ak-forms-modal>
+                                    </dt>
+                                    <dd class="pf-c-description-list__description">
+                                        <div class="pf-c-description-list__text">
+                                            ${this.provider.name}
+                                        </div>
+                                    </dd>
                                 </div>
-                            </div>
+                                <div class="pf-c-description-list__group">
+                                    <dt class="pf-c-description-list__term">
+                                        <span class="pf-c-description-list__text"
+                                            >${t`Assigned to application`}</span
+                                        >
+                                    </dt>
+                                    <dd class="pf-c-description-list__description">
+                                        <div class="pf-c-description-list__text">
+                                            <ak-provider-related-application
+                                                .provider=${this.provider}
+                                            ></ak-provider-related-application>
+                                        </div>
+                                    </dd>
+                                </div>
+                                <div class="pf-c-description-list__group">
+                                    <dt class="pf-c-description-list__term">
+                                        <span class="pf-c-description-list__text"
+                                            >${t`Client type`}</span
+                                        >
+                                    </dt>
+                                    <dd class="pf-c-description-list__description">
+                                        <div class="pf-c-description-list__text">
+                                            ${convertToTitle(this.provider.clientType || "")}
+                                        </div>
+                                    </dd>
+                                </div>
+                                <div class="pf-c-description-list__group">
+                                    <dt class="pf-c-description-list__term">
+                                        <span class="pf-c-description-list__text"
+                                            >${t`Client ID`}</span
+                                        >
+                                    </dt>
+                                    <dd class="pf-c-description-list__description">
+                                        <div class="pf-c-description-list__text">
+                                            ${this.provider.clientId}
+                                        </div>
+                                    </dd>
+                                </div>
+                                <div class="pf-c-description-list__group">
+                                    <dt class="pf-c-description-list__term">
+                                        <span class="pf-c-description-list__text"
+                                            >${t`Redirect URIs`}</span
+                                        >
+                                    </dt>
+                                    <dd class="pf-c-description-list__description">
+                                        <div class="pf-c-description-list__text">
+                                            ${this.provider.redirectUris}
+                                        </div>
+                                    </dd>
+                                </div>
+                            </dl>
                         </div>
                         <div class="pf-c-card pf-l-grid__item pf-m-12-col">
                             <div class="pf-c-card">
@@ -271,10 +253,12 @@ export class OAuth2ProviderViewPage extends LitElement {
                                         </div>
                                     </form>
                                 </div>
-                            </div>
+                            </form>
                         </div>
                     </div>
-                </section>
-            </ak-tabs>`;
+                </div>
+            </div>
+        </section>
+    </ak-tabs>`;
     }
 }
