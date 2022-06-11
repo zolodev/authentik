@@ -2,8 +2,6 @@
 title: Generic OAuth Source
 ---
 
-## Generic OAuth Source
-
 :::note
 All Integration-specific Sources are documented in the Integrations Section
 :::

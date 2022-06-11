@@ -53,6 +53,14 @@ python-versions = ">=3.6"
 vine = ">=5.0.0"
 
 [[package]]
+name = "antlr4-python3-runtime"
+version = "4.10"
+description = "ANTLR 4.10 runtime for Python 2.7.12"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "anyio"
 version = "3.6.1"
 description = "High level compatibility layer for multiple asynchronous event loop implementations"
@@ -2070,7 +2078,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "f88cbaf5f2662730ed2cc13eadec09a139122af2fbeaeb315c3daf70e743bf70"
+content-hash = "cda65ca3a079ab908a5f00f2f5b2d7d42cec0c1106af67d239506ffcd7a3daa5"
 
 [metadata.files]
 aiohttp = [
@@ -2158,6 +2166,9 @@ aiosignal = [
 amqp = [
     {file = "amqp-5.1.1-py3-none-any.whl", hash = "sha256:6f0956d2c23d8fa6e7691934d8c3930eadb44972cbbd1a7ae3a520f735d43359"},
     {file = "amqp-5.1.1.tar.gz", hash = "sha256:2c1b13fecc0893e946c65cbd5f36427861cffa4ea2201d8f6fca22e2a373b5e2"},
+]
+antlr4-python3-runtime = [
+    {file = "antlr4-python3-runtime-4.10.tar.gz", hash = "sha256:061a49bc72ae05a35d9b61c0ba0ac36c0397708819f02fbfb20a80e47d287a1b"},
 ]
 anyio = [
     {file = "anyio-3.6.1-py3-none-any.whl", hash = "sha256:cb29b9c70620506a9a8f87a309591713446953302d7d995344d0d7c6c0c9a7be"},

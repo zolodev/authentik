@@ -140,6 +140,7 @@ uvicorn = {extras = ["standard"],version = "*"}
 webauthn = "*"
 wsproto = "*"
 xmlsec = "*"
+antlr4-python3-runtime = "^4.10"
 
 [tool.poetry.dev-dependencies]
 bandit = "*"
