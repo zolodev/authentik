@@ -26,4 +26,3 @@ def managed_reconcile(self: MonitoredTask):
         )
     except DatabaseError as exc:  # pragma: no cover
         self.set_status(TaskResult(TaskResultStatus.WARNING, [str(exc)]))
-        self.retry()
